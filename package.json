@@ -1,5 +1,5 @@
 {
-  "name": "nf",
+  "name": "evm",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,12 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@lit-protocol/auth-helpers": "^6.2.2",
-    "@lit-protocol/contracts-sdk": "^6.3.0",
+    "@lit-protocol/auth-helpers": "^6.4.0",
+    "@lit-protocol/contracts-sdk": "^6.4.0",
     "@lit-protocol/lit-auth-client": "^6.4.0",
-    "@lit-protocol/lit-node-client": "^6.2.2",
-    "@lit-protocol/pkp-ethers": "^6.2.2",
-    "@lit-protocol/types": "^6.2.2",
+    "@lit-protocol/lit-node-client": "^6.4.0",
+    "@lit-protocol/pkp-ethers": "^6.4.0",
+    "@lit-protocol/types": "^6.4.0",
     "@simplewebauthn/browser": "^10.0.0",
     "dotenv": "^16.4.5",
     "ethers": "^5.7.2",
