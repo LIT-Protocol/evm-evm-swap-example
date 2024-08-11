@@ -137,12 +137,10 @@ const go = async () => {
 go()
 `;
 
-
 let action_ipfs_1 = "QmW5Wg1XYE58VQZPShSRdeHJXqPfQXnijJJfYUMbr4Fosk";
 // let action_ipfs_2 = "QmYSrjvQy5xgVCRvGFa6ipE53sXYSYYvB7zCFisA23s2kP";
-let action_ipfs_2 = "QmdYHJb6GpjcQvFVJRArYs4VMvmqMFukfEk1HwwV6q43Du";
+let action_ipfs_2 = "QmYAZrJWSTEkoU2qJtVr8UhbNHUjBuyW5jCEk7RNpNSBV7";
 let action_ipfs_3 = "QmXbhh11iycAUhTL1FX5j524cErAs7QqrSJ7uptsRMg2T5";
-
 
 // for action 1
 let mintedPKP_1 = {
@@ -155,27 +153,32 @@ let mintedPKP_1 = {
 
 // for action 2 with transferring the pkp to itself
 let mintedPKP_2 = {
-    "tokenId": "0xea3c448648d548e52d9e36ab55d967f4ffcfbb8fce52949909e7f438dfb8a75b",
-    "publicKey": "047aa1f5c9551710a06dfca75365a0581b4a5f02ed7a3e1aa81e38a9af65b99e864ae939e7818271e13fa0be2aa3cb6e6c5dcdd9ad8172f9743b59217180302b42",
-    "ethAddress": "0x66CF67b8952BD26704a467e518275D21A63a88b6"
-}
+    tokenId:
+        "0xea3c448648d548e52d9e36ab55d967f4ffcfbb8fce52949909e7f438dfb8a75b",
+    publicKey:
+        "047aa1f5c9551710a06dfca75365a0581b4a5f02ed7a3e1aa81e38a9af65b99e864ae939e7818271e13fa0be2aa3cb6e6c5dcdd9ad8172f9743b59217180302b42",
+    ethAddress: "0x66CF67b8952BD26704a467e518275D21A63a88b6",
+};
 
 // for action 2 with keeping the pkp in the same wallet
 let mintedPKP_3 = {
-    "tokenId": "0x48add65b3c82bb5e19a318a27b28205e8d6ab0b6c29b6adb9382077eb656e696",
-    "publicKey": "0417ee6f0e3eb8f6b459b0d29c3845d286ae6150e21ab0e991c796c21485decc5a1952bea7fb6499839ddf3e6a9e745042ccfec6c3e986aa4408a0008bcf416415",
-    "ethAddress": "0x66225c8Ceda52cf1c739E19816f2e35d2F6558f8"
-}
+    tokenId:
+        "0x48add65b3c82bb5e19a318a27b28205e8d6ab0b6c29b6adb9382077eb656e696",
+    publicKey:
+        "0417ee6f0e3eb8f6b459b0d29c3845d286ae6150e21ab0e991c796c21485decc5a1952bea7fb6499839ddf3e6a9e745042ccfec6c3e986aa4408a0008bcf416415",
+    ethAddress: "0x66225c8Ceda52cf1c739E19816f2e35d2F6558f8",
+};
 // for action 3
 let mintedPKP_4 = {
-    "tokenId": "0x3ae2e6624bfb6a0c9a03e9555a6a2b2b6f5b151f59ba7bc2021152ceb7cf9749",
-    "publicKey": "0424c6b7655a639d3d4da89be27e154566a7ef3a321b2ed0b3d5e43006619b203be62369b38c450d6c2d2d6b11375f405d4a51d7d4d4d1248f9722bc372d2d319b",
-    "ethAddress": "0x75C11F97A6621b4F8C916Faac2E01a7b2BD5EC1c"
-}
+    tokenId:
+        "0x3ae2e6624bfb6a0c9a03e9555a6a2b2b6f5b151f59ba7bc2021152ceb7cf9749",
+    publicKey:
+        "0424c6b7655a639d3d4da89be27e154566a7ef3a321b2ed0b3d5e43006619b203be62369b38c450d6c2d2d6b11375f405d4a51d7d4d4d1248f9722bc372d2d319b",
+    ethAddress: "0x75C11F97A6621b4F8C916Faac2E01a7b2BD5EC1c",
+};
 
-
-let mintedPKP = mintedPKP_4;
-let action_ipfs = action_ipfs_3;
+let mintedPKP = mintedPKP_2;
+let action_ipfs = action_ipfs_2;
 
 let params = {
     rpc1: LIT_CHAINS[chainAParams.chain].rpcUrls[0],
@@ -229,7 +232,7 @@ export async function mintGrantBurnPKP() {
     await litContracts.connect();
 
     const mintPkp = await litContracts.pkpNftContractUtils.write.mint();
-    const pkp = mintPkp.pkp
+    const pkp = mintPkp.pkp;
     console.log("PKP: ", pkp);
 
     console.log("adding permitted action..");
@@ -287,9 +290,11 @@ export async function checkPermits() {
             mintedPKP.tokenId
         );
 
-    console.log("Actions ", permittedActions, checkGeneratedAction);
-    console.log("Auth methods ", permittedAuthMethods);
-    console.log("Addresses ", permittedAddresses);
+    console.log("ipfs ", action_ipfs);
+    console.log("ipfs hex ", checkGeneratedAction);
+    console.log("Actions Permissions ", permittedActions, checkGeneratedAction);
+    console.log("Auth methods Permissions ", permittedAuthMethods);
+    console.log("Addresses Permissions ", permittedAddresses);
 }
 
 export async function depositOnChainA() {
@@ -589,6 +594,10 @@ export async function sessionSigUser() {
         publicKey: mintedPKP.publicKey,
         chain: "ethereum",
         resourceAbilityRequests: [
+            {
+                resource: new LitPKPResource("*"),
+                ability: LitAbility.PKPSigning,
+            },
             {
                 resource: new LitActionResource("*"),
                 ability: LitAbility.LitActionExecution,
