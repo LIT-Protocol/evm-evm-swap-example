@@ -1,6 +1,6 @@
 import { LitNodeClient } from "@lit-protocol/lit-node-client";
 import { LitContracts } from "@lit-protocol/contracts-sdk";
-import { LitNetwork } from "@lit-protocol/constants";
+import { LitNetwork, AuthMethodScope } from "@lit-protocol/constants";
 import { ethers } from "ethers";
 import { ipfsHelpers } from "ipfs-helpers";
 import bs58 from "bs58";
@@ -13,14 +13,8 @@ import {
     createSiweMessageWithRecaps,
     generateAuthSig,
     LitPKPResource,
-    decode
 } from "@lit-protocol/auth-helpers";
 import { LIT_CHAINS } from "@lit-protocol/constants";
-import {
-    EthWalletProvider,
-    LitAuthClient,
-    BaseProvider,
-  } from "@lit-protocol/lit-auth-client";
 
 const litNodeClient = new LitNodeClient({
     litNetwork: LitNetwork.DatilDev,
@@ -131,34 +125,57 @@ const go = async () => {
         sigName: "signature",
     });
 
-    Lit.Actions.setResponse({ response: 1 });
+    Lit.Actions.setResponse({ response: true });
 };
 go()
-`
+`;
 
 const LitActionCode_3 = `
 const go = async () => {
+    Lit.Actions.setResponse({ response: true });
 };
 go()
-`
+`;
+
 
 let action_ipfs_1 = "QmW5Wg1XYE58VQZPShSRdeHJXqPfQXnijJJfYUMbr4Fosk";
-let action_ipfs_2 = "QmYSrjvQy5xgVCRvGFa6ipE53sXYSYYvB7zCFisA23s2kP";
+// let action_ipfs_2 = "QmYSrjvQy5xgVCRvGFa6ipE53sXYSYYvB7zCFisA23s2kP";
+let action_ipfs_2 = "QmdYHJb6GpjcQvFVJRArYs4VMvmqMFukfEk1HwwV6q43Du";
+let action_ipfs_3 = "QmXbhh11iycAUhTL1FX5j524cErAs7QqrSJ7uptsRMg2T5";
 
+
+// for action 1
 let mintedPKP_1 = {
-    "tokenId": "95491892207830505561819009983418818315625152553973679153277348121186451091283",
-    "publicKey": "0x04f0665f3591384f456bfe23033a44f49cde42947f043fc790c9421e04fc5b611a78cbc28b3cfbb7552eddebeae99dec51928ba732bbf32680a25bf97da05da8a4",
-    "ethAddress": "0x146D2E608B19ca3e3B81ffaD0f9FF8fE9ED88815"
-}
+    tokenId:
+        "95491892207830505561819009983418818315625152553973679153277348121186451091283",
+    publicKey:
+        "0x04f0665f3591384f456bfe23033a44f49cde42947f043fc790c9421e04fc5b611a78cbc28b3cfbb7552eddebeae99dec51928ba732bbf32680a25bf97da05da8a4",
+    ethAddress: "0x146D2E608B19ca3e3B81ffaD0f9FF8fE9ED88815",
+};
 
+// for action 2 with transferring the pkp to itself
 let mintedPKP_2 = {
-    "tokenId": "68040729559080079184191664130240643351892271592642575637073683007408000532231",
-    "publicKey": "0x04e8f644f0a326e2b4c4e5524cc0613a0d2d7878fcaef7ca16899222c94f47ebcdcc788546cb9adfb506026196d03e5283cff6cde102f10095e732bfc0bc894dac",
-    "ethAddress": "0x6DE495A88fE980CDFAA5853a80ae0C28e6775a6A"
+    "tokenId": "0xea3c448648d548e52d9e36ab55d967f4ffcfbb8fce52949909e7f438dfb8a75b",
+    "publicKey": "047aa1f5c9551710a06dfca75365a0581b4a5f02ed7a3e1aa81e38a9af65b99e864ae939e7818271e13fa0be2aa3cb6e6c5dcdd9ad8172f9743b59217180302b42",
+    "ethAddress": "0x66CF67b8952BD26704a467e518275D21A63a88b6"
 }
 
-let mintedPKP = mintedPKP_2;
-let action_ipfs = action_ipfs_2;
+// for action 2 with keeping the pkp in the same wallet
+let mintedPKP_3 = {
+    "tokenId": "0x48add65b3c82bb5e19a318a27b28205e8d6ab0b6c29b6adb9382077eb656e696",
+    "publicKey": "0417ee6f0e3eb8f6b459b0d29c3845d286ae6150e21ab0e991c796c21485decc5a1952bea7fb6499839ddf3e6a9e745042ccfec6c3e986aa4408a0008bcf416415",
+    "ethAddress": "0x66225c8Ceda52cf1c739E19816f2e35d2F6558f8"
+}
+// for action 3
+let mintedPKP_4 = {
+    "tokenId": "0x3ae2e6624bfb6a0c9a03e9555a6a2b2b6f5b151f59ba7bc2021152ceb7cf9749",
+    "publicKey": "0424c6b7655a639d3d4da89be27e154566a7ef3a321b2ed0b3d5e43006619b203be62369b38c450d6c2d2d6b11375f405d4a51d7d4d4d1248f9722bc372d2d319b",
+    "ethAddress": "0x75C11F97A6621b4F8C916Faac2E01a7b2BD5EC1c"
+}
+
+
+let mintedPKP = mintedPKP_4;
+let action_ipfs = action_ipfs_3;
 
 let params = {
     rpc1: LIT_CHAINS[chainAParams.chain].rpcUrls[0],
@@ -166,7 +183,7 @@ let params = {
     chainAParams: chainAParams,
     chainBParams: chainBParams,
     mintedPKP: mintedPKP,
-}
+};
 
 // const e = LIT_CHAINS[chainAParams.chain].rpcUrls[0];
 // `https://yellowstone-rpc.litprotocol.com/`
@@ -201,51 +218,46 @@ export async function createLitAction() {
 }
 
 export async function mintGrantBurnPKP() {
-    console.log("mint/grant/burn started..");
-    const signer = await getWalletA();
+    console.log("minting started..");
+    const signerA = await getWalletA();
 
     const litContracts = new LitContracts({
-        signer: signer,
+        signer: signerA,
         network: LitNetwork.DatilDev,
         debug: false,
     });
-
     await litContracts.connect();
 
-    // const ipfsCID = await uploadLitActionToIPFS(LitActionCode_1);
-    const bytesCID = await stringToBytes(action_ipfs);
-    // console.log(ipfsCID);
-
-    const pkpNft = new ethers.Contract(pkpNftAddress, pkpNftAbi, signer);
-
-    const mintCost = await pkpNft.mintCost();
-    const mgbTxData = await pkpNft.populateTransaction.mintGrantAndBurnNext(
-        2,
-        bytesCID,
-        { value: mintCost }
-    );
-
-    const feeData = await signer.getFeeData();
-    mgbTxData.gasPrice = feeData.gasPrice;
-
-    const gasLimit = await signer.estimateGas(mgbTxData);
-    mgbTxData.gasLimit = gasLimit.mul(105).div(100);
-
-    const txnWithGas = await signer.populateTransaction(mgbTxData);
-    const serializedTxn = await signer.signTransaction(txnWithGas);
-
-    const mgbTx = await signer.provider.sendTransaction(serializedTxn);
-
-    const receipt = await mgbTx.wait();
-    console.log("mint/grant/burn executed: ", receipt);
-
-    const tokenId = ethers.BigNumber.from(receipt.logs[1].topics[3]).toString();
-    const publicKey = await litContracts.pkpNftContract.read.getPubkey(tokenId);
-    const ethAddress = ethers.utils.computeAddress(publicKey);
-
-    const pkp = { tokenId, publicKey, ethAddress };
-    // mintedPKP = pkp;
+    const mintPkp = await litContracts.pkpNftContractUtils.write.mint();
+    const pkp = mintPkp.pkp
     console.log("PKP: ", pkp);
+
+    console.log("adding permitted action..");
+
+    await litContracts.addPermittedAction({
+        pkpTokenId: pkp.tokenId,
+        ipfsId: action_ipfs,
+        authMethodScopes: [AuthMethodScope.SignAnything],
+    });
+
+    console.log("transfer started..");
+
+    const transferPkpOwnershipReceipt =
+        await litContracts.pkpNftContract.write.transferFrom(
+            signerA.address,
+            pkp.ethAddress,
+            pkp.tokenId,
+            {
+                gasLimit: 125_000,
+            }
+        );
+
+    await transferPkpOwnershipReceipt.wait();
+
+    console.log(
+        "Transferred PKP ownership to itself: ",
+        transferPkpOwnershipReceipt
+    );
 }
 
 export async function checkPermits() {
@@ -260,14 +272,20 @@ export async function checkPermits() {
     await litContracts.connect();
 
     let permittedActions =
-        await litContracts.pkpPermissionsContract.read.getPermittedActions(mintedPKP.tokenId);
-    
-    let checkGeneratedAction = stringToBytes(action_ipfs)
+        await litContracts.pkpPermissionsContract.read.getPermittedActions(
+            mintedPKP.tokenId
+        );
+
+    let checkGeneratedAction = stringToBytes(action_ipfs);
 
     let permittedAuthMethods =
-        await litContracts.pkpPermissionsContract.read.getPermittedAuthMethods(mintedPKP.tokenId);
+        await litContracts.pkpPermissionsContract.read.getPermittedAuthMethods(
+            mintedPKP.tokenId
+        );
     let permittedAddresses =
-        await litContracts.pkpPermissionsContract.read.getPermittedAddresses(mintedPKP.tokenId);
+        await litContracts.pkpPermissionsContract.read.getPermittedAddresses(
+            mintedPKP.tokenId
+        );
 
     console.log("Actions ", permittedActions, checkGeneratedAction);
     console.log("Auth methods ", permittedAuthMethods);
@@ -448,10 +466,9 @@ export async function executeSwapAction() {
     console.log("swap tx2: ", tx2);
 }
 
-
 export async function executeTestAction() {
     console.log("executing action started..");
-    const sessionSigs = await sessionSigLitAction();
+    const sessionSigs = await sessionSigUser();
     // const signer = await getWalletA();
 
     await litNodeClient.connect();
@@ -506,8 +523,8 @@ async function stringToBytes(_string) {
 
 export function BytesToString(_bytesString) {
     const decoded = bs58.encode(_bytesString);
-    return decoded
-  }
+    return decoded;
+}
 
 function formatSignature(signature) {
     const dataSigned = `0x${signature.dataSigned}`;
@@ -534,7 +551,7 @@ function generateCallData(counterParty, amount) {
 // session sigs --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 export async function sessionSigLitAction() {
-    console.log("creating session sig..")
+    console.log("creating session sig..");
     // const authWalletA = await getWalletA();
 
     await litNodeClient.connect();
@@ -594,40 +611,6 @@ export async function sessionSigUser() {
                 toSign,
             });
         },
-    });
-
-    console.log("sessionSigs: ", sessionSigs);
-    return sessionSigs;
-}
-
-export async function sessionSigPkp() {
-    console.log("creating session sigs..");
-    const ethersSigner = await getWalletA();
-
-    await litNodeClient.connect();
-
-    // const authMethod = await BaseProvider.authenticate({
-    //     signer: ethersSigner,
-    //     litNodeClient,
-    //   });
-
-    const authMethod = await EthWalletProvider.authenticate({
-        signer: ethersSigner,
-        litNodeClient,
-      });
-
-      console.log("authMethod: ", authMethod);
-
-    const sessionSigs = await litNodeClient.getPkpSessionSigs({
-        pkpPublicKey: mintedPKP.publicKey,
-        authMethods: [authMethod],
-        resourceAbilityRequests: [
-            {
-                resource: new LitPKPResource("*"),
-                ability: LitAbility.PKPSigning,
-            },
-        ],
-        expiration: new Date(Date.now() + 1000 * 60 * 10).toISOString(), // 10 minutes
     });
 
     console.log("sessionSigs: ", sessionSigs);
