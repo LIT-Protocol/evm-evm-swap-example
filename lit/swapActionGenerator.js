@@ -1,20 +1,14 @@
-// const obj1 = { a: 1, b: 2 };
-// const obj2 = Object.assign({}, obj1);
-// obj2 gets fresh copy of obj1
-
-// authSig: JSON.parse(authSig),
-
 import { ethers } from "ethers";
-import { LIT_CHAINS } from "@lit-protocol/constants";
 
 export function createERC20SwapLitAction(
     chainAParams,
     chainBParams,
-    originTime
 ) {
     if (chainAParams.chain === chainBParams.chain) {
         throw new Error("Swap must be cross chain, same chains not supported");
     }
+
+    const originTime = Date.now()
 
     const chainACondition = generateERC20SwapCondition(chainAParams);
     const chainBCondition = generateERC20SwapCondition(chainBParams);
@@ -44,7 +38,7 @@ export function createERC20SwapLitAction(
         chainBTransaction,
         chainAClawbackTransaction,
         chainBClawbackTransaction,
-        Date.now()
+        originTime
     );
 
     return action;
@@ -155,15 +149,16 @@ function generateERC20SwapLitActionCode(
       });
     };
     
-    chainACondition.parameters = chainBCondition.parameters = [
-      pkpAddress,
-    ];
     chainATransaction.from = chainBTransaction.from = pkpAddress;
 
     chainATransaction = {...chainATransaction, ...chainAGasConfig}
     chainBTransaction = {...chainBTransaction, ...chainBGasConfig}
     chainAClawbackTransaction = {...chainAClawbackTransaction, ...chainAGasConfig}
     chainBClawbackTransaction = {...chainBClawbackTransaction, ...chainBGasConfig}
+
+    chainACondition.parameters = chainBCondition.parameters = [
+      pkpAddress,
+    ];
     
     const chainAConditionsPass = await Lit.Actions.checkConditions({
       conditions: [chainACondition],
