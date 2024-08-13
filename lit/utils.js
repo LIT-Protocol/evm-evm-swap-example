@@ -18,8 +18,7 @@ const litNodeClient = new LitNodeClient({
     debug: true,
 });
 
-let mintedPKP = {};
-let action_ipfs = "";
+let mintedPKP, action_ipfs;
 
 // swap params --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // deposit1: wA deposits on cB, if action executes, funds are transferred to wB
@@ -78,9 +77,13 @@ export async function createLitAction() {
 
     console.log("Lit Action code:\n", action);
     console.log("IPFS CID: ", ipfsCid);
+    return ipfsCid;
 }
 
-export async function mintGrantBurnPKP() {
+export async function mintGrantBurnPKP(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
     console.log("minting started..");
     const signerA = await getWalletA();
 
@@ -121,9 +124,14 @@ export async function mintGrantBurnPKP() {
         "Transferred PKP ownership to itself: ",
         transferPkpOwnershipReceipt
     );
+    return pkp;
 }
 
-export async function checkPermits() {
+export async function checkPermits(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+    console.log("params", _action_ipfs, _mintedPKP);
+
     console.log("checking perms..");
 
     const litContracts = new LitContracts({
@@ -155,7 +163,10 @@ export async function checkPermits() {
     console.log("Addresses Permissions ", permittedAddresses);
 }
 
-export async function depositOnChainA() {
+export async function depositOnChainA(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
     console.log(
         `deposit started from wallet A on chain A (${chainAParams.chain})..`
     );
@@ -186,7 +197,10 @@ export async function depositOnChainA() {
     console.log("deposit executed: ", receipt);
 }
 
-export async function depositOnChainB() {
+export async function depositOnChainB(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
     console.log(
         `deposit started from wallet B on chain B (${chainBParams.chain})..`
     );
@@ -217,7 +231,10 @@ export async function depositOnChainB() {
     console.log("deposit executed: ", receipt);
 }
 
-export async function getFundsStatus() {
+export async function getFundsStatus(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
     console.log("checking balances..");
 
     const abi = ["function balanceOf(address) view returns (uint256)"];
@@ -254,7 +271,10 @@ export async function getFundsStatus() {
     console.log("balance on chain B: ", balanceInTokens_2);
 }
 
-export async function executeSwapAction() {
+export async function executeSwapAction(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
     console.log("executing action started..");
     const sessionSigs = await sessionSigUser();
 
@@ -279,13 +299,13 @@ export async function executeSwapAction() {
         },
     });
 
-    console.log("logs: ", results.logs);
     console.log("results: ", results);
-    console.log("signatures: ", results.signatures);
 
     if (results.signatures == undefined) {
         return;
     }
+
+    console.log("signatures: ", results.signatures);
 
     const signA = formatSignature(results.signatures.chainASignature);
     const signB = formatSignature(results.signatures.chainBSignature);
@@ -441,4 +461,54 @@ function formatSignature(signature) {
         s: `0x${signature.s}`,
     });
     return encodedSig;
+}
+
+export async function mintTokensOnBothChains() {
+    console.log("minting tokens on both wallets..");
+    const abi = [
+        "function mintTo(address)",
+        "function balanceOf(address) view returns (uint256)",
+    ];
+
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[chainAParams.chain].rpcUrls[0]
+    );
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[chainBParams.chain].rpcUrls[0]
+    );
+
+    let signer_A = await getWalletA();
+    signer_A = signer_A.connect(chainAProvider);
+    const tokenContract_A = new ethers.Contract(
+        chainAParams.tokenAddress,
+        abi,
+        signer_A
+    );
+    const mint_A = await tokenContract_A.mintTo(signer_A.address);
+    mint_A.wait();
+    console.log(mint_A);
+
+    let signer_B = await getWalletB();
+    signer_A = signer_B.connect(chainBProvider);
+    const tokenContract_B = new ethers.Contract(
+        chainBParams.tokenAddress,
+        abi,
+        signer_B
+    );
+    const mint_B = await tokenContract_B.mintTo(signer_B.address);
+    mint_B.wait();
+    console.log(mint_B);
+
+    const ownerBalance_A = ethers.utils.formatUnits(
+        await tokenContract_A.balanceOf(signer_A.address),
+        chainAParams.decimals
+    );
+
+    const ownerBalance_B = ethers.utils.formatUnits(
+        await tokenContract_B.balanceOf(signer_B.address),
+        chainBParams.decimals
+    );
+
+    console.log("owner balance on chain A: ", ownerBalance_A);
+    console.log("owner balance on chain B: ", ownerBalance_B);
 }
