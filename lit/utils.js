@@ -1,10 +1,6 @@
 import { LitNodeClient } from "@lit-protocol/lit-node-client";
 import { LitContracts } from "@lit-protocol/contracts-sdk";
 import { LitNetwork, AuthMethodScope } from "@lit-protocol/constants";
-import { ethers } from "ethers";
-import { ipfsHelpers } from "ipfs-helpers";
-import bs58 from "bs58";
-import { createERC20SwapLitAction } from "./swapActionGenerator";
 import { LitAbility } from "@lit-protocol/types";
 import {
     LitActionResource,
@@ -13,34 +9,21 @@ import {
     LitPKPResource,
 } from "@lit-protocol/auth-helpers";
 import { LIT_CHAINS } from "@lit-protocol/constants";
-import FormData from "form-data";
+import { ethers } from "ethers";
+import bs58 from "bs58";
+import { createERC20SwapLitAction } from "./swapActionGenerator";
 
 const litNodeClient = new LitNodeClient({
     litNetwork: LitNetwork.DatilDev,
     debug: true,
 });
 
-const privateKey1 = process.env.NEXT_PUBLIC_PRIVATE_KEY_1;
-const privateKey2 = process.env.NEXT_PUBLIC_PRIVATE_KEY_2;
-
-let mintedPKP = {
-    tokenId:
-        "0x3621aa84b6eae66bdc2b36bd537e26b196ba15741f581268cf62cd8ac5f58598",
-    publicKey:
-        "04813d605f5edf2338411a6284960dc8111b0085b8d3a875a512323633ddad160035ef260184b1e09e1a70ea0579a8a273144c88c3ca22e0526817aa72f1df90d9",
-    ethAddress: "0x28d23aE1128E4E36fA3a12ecbc293d2EfAc64c76",
-};
-
-let action_ipfs = "QmbqKyBPTasRw1BE2DLWaSM4VASae2cSTRy2DC2K7SWuiF";
+let mintedPKP = {};
+let action_ipfs = "";
 
 // swap params --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-// chain conditions need chainName
-// chain transactions need chainId
-// transaction needs chain provider
-
 // deposit1: wA deposits on cB, if action executes, funds are transferred to wB
-// deposit1: wB deposits on cA, if action executes, funds are transferred to wA
+// deposit2: wB deposits on cA, if action executes, funds are transferred to wA
 
 const chainAParams = {
     from: "0x48e6a467852Fa29710AaaCDB275F85db4Fa420eB",
@@ -68,7 +51,10 @@ async function getWalletA() {
     const provider = new ethers.providers.JsonRpcProvider(
         `https://yellowstone-rpc.litprotocol.com/`
     );
-    const wallet = new ethers.Wallet(privateKey1, provider);
+    const wallet = new ethers.Wallet(
+        process.env.NEXT_PUBLIC_PRIVATE_KEY_1,
+        provider
+    );
     return wallet;
 }
 
@@ -76,7 +62,10 @@ async function getWalletB() {
     const provider = new ethers.providers.JsonRpcProvider(
         `https://yellowstone-rpc.litprotocol.com/`
     );
-    const wallet = new ethers.Wallet(privateKey2, provider);
+    const wallet = new ethers.Wallet(
+        process.env.NEXT_PUBLIC_PRIVATE_KEY_2,
+        provider
+    );
     return wallet;
 }
 
@@ -329,6 +318,60 @@ export async function executeSwapAction() {
 
 // helper functions ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+export async function uploadViaPinata(_litActionCode) {
+    const formData = new FormData();
+
+    const file = new File([_litActionCode], "Action.txt", {
+        type: "text/plain",
+    });
+    const pinataMetadata = JSON.stringify({
+        name: "EVM-SWAP",
+    });
+    const pinataOptions = JSON.stringify({
+        cidVersion: 0,
+    });
+
+    formData.append("file", file);
+    formData.append("pinataMetadata", pinataMetadata);
+    formData.append("pinataOptions", pinataOptions);
+
+    const key = process.env.NEXT_PUBLIC_PINATA_API;
+
+    const request = await fetch(
+        "https://api.pinata.cloud/pinning/pinFileToIPFS",
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${key}`,
+            },
+            body: formData,
+        }
+    );
+    const response = await request.json();
+    console.log(response);
+    return response.IpfsHash;
+}
+
+async function stringToBytes(_string) {
+    const bytes = `0x${Buffer.from(bs58.decode(_string)).toString("hex")}`;
+    return bytes;
+}
+
+export function BytesToString(_bytesString) {
+    const string = bs58.encode(_bytesString);
+    return string;
+}
+
+function generateCallData(counterParty, amount) {
+    const transferInterface = new ethers.utils.Interface([
+        "function transfer(address, uint256) returns (bool)",
+    ]);
+    return transferInterface.encodeFunctionData("transfer", [
+        counterParty,
+        amount,
+    ]);
+}
+
 export async function sessionSigUser() {
     console.log("creating session sigs..");
     const ethersSigner = await getWalletA();
@@ -372,7 +415,6 @@ export async function sessionSigUser() {
 }
 
 export async function getAuthSig() {
-    console.log("creating auth sig..");
     const signer = await getWalletA();
 
     await litNodeClient.connect();
@@ -392,73 +434,11 @@ export async function getAuthSig() {
     return authSig;
 }
 
-export async function uploadViaPinata(_litActionCode) {
-    const formData = new FormData();
-
-    const file = new File([_litActionCode], "Action.txt", {
-        type: "text/plain",
-    });
-
-    const pinataMetadata = JSON.stringify({
-        name: "EVM-SWAP",
-    });
-
-    const pinataOptions = JSON.stringify({
-        cidVersion: 0,
-    });
-
-    formData.append("file", file);
-    formData.append("pinataMetadata", pinataMetadata);
-    formData.append("pinataOptions", pinataOptions);
-
-    const key = process.env.NEXT_PUBLIC_PINATA_API;
-
-    const request = await fetch(
-        "https://api.pinata.cloud/pinning/pinFileToIPFS",
-        {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${key}`,
-            },
-            body: formData,
-        }
-    );
-    const response = await request.json();
-    console.log(response);
-    return response.IpfsHash;
-}
-
-async function stringToBytes(_string) {
-    const LIT_ACTION_IPFS_CID_BYTES = `0x${Buffer.from(
-        bs58.decode(_string)
-    ).toString("hex")}`;
-
-    return LIT_ACTION_IPFS_CID_BYTES;
-}
-
-export function BytesToString(_bytesString) {
-    const decoded = bs58.encode(_bytesString);
-    return decoded;
-}
-
 function formatSignature(signature) {
-    // const dataSigned = `0x${signature.dataSigned}`;
-
     const encodedSig = ethers.utils.joinSignature({
         v: signature.recid,
         r: `0x${signature.r}`,
         s: `0x${signature.s}`,
     });
-
     return encodedSig;
-}
-
-function generateCallData(counterParty, amount) {
-    const transferInterface = new ethers.utils.Interface([
-        "function transfer(address, uint256) returns (bool)",
-    ]);
-    return transferInterface.encodeFunctionData("transfer", [
-        counterParty,
-        amount,
-    ]);
 }
