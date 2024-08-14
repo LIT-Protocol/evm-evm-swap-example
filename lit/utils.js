@@ -18,7 +18,13 @@ const litNodeClient = new LitNodeClient({
     debug: true,
 });
 
-let mintedPKP, action_ipfs;
+// let mintedPKP, action_ipfs;
+
+let mintedPKP = {
+    "tokenId": "0x846ab55d1c780a8f6529e13c90eb9ca14ca827bda99cdf8fd0c18e9cc06ca6a3",
+    "publicKey": "043274b904580126fa07399ad71422fb34bff860c40899b5b85b85ab89db17511863af5efaf57843cb9fedc72c0a26023d682df7e59120bb1e2e306711a01ae43a",
+    "ethAddress": "0x05534F570853d5c275d9c86DF9e73A9A79ddC731"
+}, action_ipfs = "QmVynpFRBePn8672pf7YtPTXGFC7vQkBEHGjGhVrZyFVVy";
 
 // swap params --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // deposit1: wA deposits on cB, if action executes, funds are transferred to wB
@@ -31,7 +37,7 @@ const chainAParams = {
     chain: "baseSepolia",
     amount: "4",
     decimals: 18,
-    provider: "https://sepolia.base.org",
+    // provider: "https://sepolia.base.org",
 };
 
 const chainBParams = {
@@ -41,7 +47,7 @@ const chainBParams = {
     chain: "yellowstone",
     amount: "8",
     decimals: 18,
-    provider: "https://ethereum-sepolia-rpc.publicnode.com",
+    // provider: "https://ethereum-sepolia-rpc.publicnode.com",
 };
 
 // wallet getters --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -130,10 +136,8 @@ export async function mintGrantBurnPKP(_action_ipfs, _mintedPKP) {
 export async function checkPermits(_action_ipfs, _mintedPKP) {
     _action_ipfs ? (action_ipfs = _action_ipfs) : null;
     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
-    console.log("params", _action_ipfs, _mintedPKP);
 
     console.log("checking perms..");
-
     const litContracts = new LitContracts({
         network: LitNetwork.DatilDev,
         debug: false,
@@ -195,6 +199,20 @@ export async function depositOnChainA(_action_ipfs, _mintedPKP) {
     const receipt = await tx.wait();
 
     console.log("deposit executed: ", receipt);
+
+    console.log("depositing some funds for gas..");
+
+    const transactionObject2 = {
+        to: mintedPKP.ethAddress,
+        value: ethers.BigNumber.from("300000"),
+        gasPrice: await wallet.provider.getGasPrice(),
+        gasLimit: ethers.BigNumber.from("2100000"),
+    };
+
+    const tx2 = await wallet.sendTransaction(transactionObject2);
+    const receipt2 = await tx2.wait();
+
+    console.log("gas deposit executed: ", receipt2);
 }
 
 export async function depositOnChainB(_action_ipfs, _mintedPKP) {
@@ -225,10 +243,26 @@ export async function depositOnChainB(_action_ipfs, _mintedPKP) {
         ),
     };
 
+    console.log(transactionObject)
+
     const tx = await wallet.sendTransaction(transactionObject);
     const receipt = await tx.wait();
 
     console.log("deposit executed: ", receipt);
+
+    console.log("depositing some funds for gas..");
+
+    const transactionObject2 = {
+        to: mintedPKP.ethAddress,
+        value: ethers.BigNumber.from("300000"),
+        gasPrice: await wallet.provider.getGasPrice(),
+        gasLimit: ethers.BigNumber.from("2100000"),
+    };
+
+    const tx2 = await wallet.sendTransaction(transactionObject2);
+    const receipt2 = await tx2.wait();
+
+    console.log("gas deposit executed: ", receipt2);
 }
 
 export async function getFundsStatus(_action_ipfs, _mintedPKP) {
@@ -278,11 +312,36 @@ export async function executeSwapAction(_action_ipfs, _mintedPKP) {
     console.log("executing action started..");
     const sessionSigs = await sessionSigUser();
 
-    const gasConfig = {
-        maxFeePerGas: "100000000000", // in wei
-        maxPriorityFeePerGas: "40000000000", // in wei
-        gasLimit: "21000",
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[chainAParams.chain].rpcUrls[0]
+    );
+
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[chainBParams.chain].rpcUrls[0]
+    );
+
+    const gasConfigA = {
+        // maxFeePerGas: ethers.BigNumber.from("100000000000"), // in wei
+        // maxPriorityFeePerGas: ethers.BigNumber.from("5000000000"), // in wei
+        // chainId: 84532,
+        // nonce:  await chainAProvider.getTransactionCount(
+        //     mintedPKP.ethAddress
+        // ),
+        gasPrice: await chainAProvider.getGasPrice(),
+        gasLimit: ethers.BigNumber.from("200000"),
     };
+
+    const gasConfigB = {
+        // maxFeePerGas: ethers.BigNumber.from("100000000000"), // in wei
+        // maxPriorityFeePerGas: ethers.BigNumber.from("5000000000"), // in wei
+        // chainId: 175188,
+        // nonce:  await chainBProvider.getTransactionCount(
+        //     mintedPKP.ethAddress
+        // ),
+        gasPrice: await chainBProvider.getGasPrice(),
+        gasLimit: ethers.BigNumber.from("200000"),
+    }
+
     const authSig = await getAuthSig();
 
     await litNodeClient.connect();
@@ -294,8 +353,8 @@ export async function executeSwapAction(_action_ipfs, _mintedPKP) {
             pkpPublicKey: mintedPKP.publicKey,
             pkpAddress: mintedPKP.ethAddress,
             authSig: JSON.stringify(authSig),
-            chainAGasConfig: gasConfig,
-            chainBGasConfig: gasConfig,
+            chainAGasConfig: gasConfigA,
+            chainBGasConfig: gasConfigB,
         },
     });
 
@@ -307,32 +366,27 @@ export async function executeSwapAction(_action_ipfs, _mintedPKP) {
 
     console.log("signatures: ", results.signatures);
 
-    const signA = formatSignature(results.signatures.chainASignature);
-    const signB = formatSignature(results.signatures.chainBSignature);
+    const signatureA = formatSignature(results.signatures.chainASignature);
+    const signatureB = formatSignature(results.signatures.chainBSignature);
 
-    const chainAProvider = new ethers.providers.JsonRpcProvider(
-        chainAParams.provider
-    );
+    // console.log("txA obj", results.response.chainATransaction);
 
-    const chainBProvider = new ethers.providers.JsonRpcProvider(
-        chainBParams.provider
-    );
+    // const tx1 = await chainAProvider.sendTransaction(
+    //     ethers.utils.serializeTransaction(
+    //         results.response.chainATransaction,
+    //         signatureA
+    //     )
+    // );
+    // console.log("swap tx1: ", tx1);
 
-    const tx1 = await chainAProvider.sendTransaction(
-        ethers.utils.serializeTransaction(
-            results.response.chainATransaction,
-            signA
-        )
-    );
+    console.log("txB obj", results.response.chainBTransaction);
 
     const tx2 = await chainBProvider.sendTransaction(
         ethers.utils.serializeTransaction(
             results.response.chainBTransaction,
-            signB
+            signatureB
         )
     );
-
-    console.log("swap tx1: ", tx1);
     console.log("swap tx2: ", tx2);
 }
 
@@ -399,7 +453,7 @@ export async function sessionSigUser() {
     await litNodeClient.connect();
 
     const sessionSigs = await litNodeClient.getSessionSigs({
-        publicKey: mintedPKP.publicKey,
+        pkpPublicKey: mintedPKP.publicKey,
         chain: "ethereum",
         resourceAbilityRequests: [
             {
@@ -411,16 +465,25 @@ export async function sessionSigUser() {
                 ability: LitAbility.LitActionExecution,
             },
         ],
-        authNeededCallback: async ({ resourceAbilityRequests }) => {
+        authNeededCallback: async (params) => {
+            if (!params.uri) {
+                throw new Error("Params uri is required");
+            }
+
+            if (!params.resourceAbilityRequests) {
+                throw new Error("Params uri is required");
+            }
+
             const toSign = await createSiweMessageWithRecaps({
-                uri: "http://localhost:3000",
+                uri: params.uri,
                 expiration: new Date(
                     Date.now() + 1000 * 60 * 60 * 24
                 ).toISOString(), // 24 hours,
-                resources: resourceAbilityRequests,
+                resources: params.resourceAbilityRequests,
                 walletAddress: await ethersSigner.getAddress(),
                 nonce: await litNodeClient.getLatestBlockhash(),
                 litNodeClient,
+                domain: "localhost:3000",
             });
 
             return await generateAuthSig({
