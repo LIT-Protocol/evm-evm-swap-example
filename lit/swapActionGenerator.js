@@ -1,33 +1,30 @@
 import { ethers } from "ethers";
 
-export function createERC20SwapLitAction(
-    chainAParams,
-    chainBParams,
-) {
+export function createERC20SwapLitAction(chainAParams, chainBParams) {
     if (chainAParams.chain === chainBParams.chain) {
         throw new Error("Swap must be cross chain, same chains not supported");
     }
 
-    const originTime = Date.now()
-
     const chainACondition = generateERC20SwapCondition(chainAParams);
     const chainBCondition = generateERC20SwapCondition(chainBParams);
 
-    const chainATransaction = generateUnsignedERC20Transaction(
+    // chainAClawbackTransaction
+    const chainAClawbackTransaction = generateUnsignedERC20Transaction(
         Object.assign(Object.assign({}, chainAParams), {
             to: chainBParams.to,
         })
     );
-    const chainBTransaction = generateUnsignedERC20Transaction(
+    // chainBCallbackTransaction
+    const chainBCallbackTransaction = generateUnsignedERC20Transaction(
         Object.assign(Object.assign({}, chainBParams), {
             to: chainAParams.to,
         })
     );
 
-    const chainAClawbackTransaction = generateUnsignedERC20Transaction(
+    const chainATransaction = generateUnsignedERC20Transaction(
         Object.assign({}, chainAParams)
     );
-    const chainBClawbackTransaction = generateUnsignedERC20Transaction(
+    const chainBTransaction = generateUnsignedERC20Transaction(
         Object.assign({}, chainBParams)
     );
 
@@ -37,8 +34,7 @@ export function createERC20SwapLitAction(
         chainATransaction,
         chainBTransaction,
         chainAClawbackTransaction,
-        chainBClawbackTransaction,
-        originTime
+        chainBCallbackTransaction
     );
 
     return action;
@@ -65,9 +61,6 @@ function generateERC20SwapCondition(conditionParams) {
     };
 }
 
-        // chainId: LIT_CHAINS[transactionParams.chain],
-        // chainId: transactionParams.chain,
-        // nonce: transactionParams.nonce ? transactionParams.nonce : 0,
 function generateUnsignedERC20Transaction(transactionParams) {
     return {
         to: transactionParams.tokenAddress,
@@ -104,14 +97,10 @@ function generateERC20SwapLitActionCode(
     chainATransaction,
     chainBTransaction,
     chainAClawbackTransaction,
-    chainBClawbackTransaction,
-    originTime
+    chainBClawbackTransaction
 ) {
     return `const go = async () => {
-      
-    const originTime = ${JSON.stringify(originTime)} ? ${JSON.stringify(
-        originTime
-    )} : Date.now();
+  
     const chainACondition = ${JSON.stringify(chainACondition)}
     const chainBCondition = ${JSON.stringify(chainBCondition)}
     let chainATransaction = ${JSON.stringify(chainATransaction)}
@@ -125,12 +114,6 @@ function generateERC20SwapLitActionCode(
           ethers.utils.arrayify(ethers.utils.serializeTransaction(tx)),
         ),
       );
-    }
-
-    function checkHasThreeDaysPassed(previousTime) {
-        const currentTime = Date.now();
-        const difference = currentTime - previousTime;
-        return difference / (1000 * 3600 * 24) >= 3 ? true : false;
     }
 
     const generateSwapTransactions = async () => {
@@ -171,25 +154,15 @@ function generateERC20SwapLitActionCode(
       authSig: JSON.parse(authSig),
       chain: chainBCondition.chain,
     });
+
+    console.log("chainAConditionsPass: ", chainAConditionsPass, "chainBConditionsPass: ", chainBConditionsPass);
   
     if (chainAConditionsPass && chainBConditionsPass) {
       await generateSwapTransactions();
       return;
     }
-  
-    const threeDaysHasPassed = checkHasThreeDaysPassed(originTime);
-    const chainANonce = await Lit.Actions.getLatestNonce({address: pkpAddress, chain: chainACondition.chain});
-    const chainBNonce = await Lit.Actions.getLatestNonce({address: pkpAddress, chain: chainBCondition.chain});
 
     if (chainAConditionsPass) {
-      if (chainBNonce === "0x1") {
-        await generateSwapTransactions();
-        return;
-      }
-      if (!threeDaysHasPassed) {
-        Lit.Actions.setResponse({ response: "Conditions for swap not met!" });
-        return;
-      }
       await Lit.Actions.signEcdsa({
         toSign: hashTransaction(chainAClawbackTransaction),
         publicKey: pkpPublicKey,
@@ -204,14 +177,6 @@ function generateERC20SwapLitActionCode(
     }
   
     if (chainBConditionsPass) {
-      if (chainANonce === "0x1") {
-        await generateSwapTransactions();
-        return;
-      }
-      if (!threeDaysHasPassed) {
-        Lit.Actions.setResponse({ response: "Conditions for swap not met!" });
-        return;
-      }
       await Lit.Actions.signEcdsa({
         toSign: hashTransaction(chainBClawbackTransaction),
         publicKey: pkpPublicKey,

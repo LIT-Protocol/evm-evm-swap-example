@@ -1,6 +1,6 @@
 import { LitNodeClient } from "@lit-protocol/lit-node-client";
 import { LitContracts } from "@lit-protocol/contracts-sdk";
-import { LitNetwork, AuthMethodScope } from "@lit-protocol/constants";
+import { LitNetwork, AuthMethodScope, LIT_CHAINS } from "@lit-protocol/constants";
 import { LitAbility } from "@lit-protocol/types";
 import {
     LitActionResource,
@@ -8,7 +8,6 @@ import {
     generateAuthSig,
     LitPKPResource,
 } from "@lit-protocol/auth-helpers";
-import { LIT_CHAINS } from "@lit-protocol/constants";
 import { ethers } from "ethers";
 import bs58 from "bs58";
 import { createERC20SwapLitAction } from "./swapActionGenerator";
@@ -21,10 +20,10 @@ const litNodeClient = new LitNodeClient({
 // let mintedPKP, action_ipfs;
 
 let mintedPKP = {
-    "tokenId": "0x846ab55d1c780a8f6529e13c90eb9ca14ca827bda99cdf8fd0c18e9cc06ca6a3",
-    "publicKey": "043274b904580126fa07399ad71422fb34bff860c40899b5b85b85ab89db17511863af5efaf57843cb9fedc72c0a26023d682df7e59120bb1e2e306711a01ae43a",
-    "ethAddress": "0x05534F570853d5c275d9c86DF9e73A9A79ddC731"
-}, action_ipfs = "QmVynpFRBePn8672pf7YtPTXGFC7vQkBEHGjGhVrZyFVVy";
+    "tokenId": "0xf224a7a3a78effe8b047492d1b09356f00cb3e15e5147e4bd1a539f1fd11fe92",
+    "publicKey": "0449a06a49b2bb4c1f2a014d13edd8811a0cf2a159dc11c6f76737480a86d6513af3b129ac1ef799640e5d0df6034765e5350155286356abadc421ea6ce3c5bb2c",
+    "ethAddress": "0x5B13aed4Da506F5b5a26cF843206c6D33264CeF6"
+}, action_ipfs = "QmRuKygvCHf4qANFa9b2jDUWDUSbqN741nrNZjpQrSsj9t";
 
 // swap params --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // deposit1: wA deposits on cB, if action executes, funds are transferred to wB
@@ -33,21 +32,21 @@ let mintedPKP = {
 const chainAParams = {
     from: "0x48e6a467852Fa29710AaaCDB275F85db4Fa420eB",
     to: "0x291B0E3aA139b2bC9Ebd92168575b5c6bAD5236C",
-    tokenAddress: "0x7ce2a725e3644D49009c1890dcdBebA8e5D43d4A",
+    tokenAddress: "0xad50f302a957C165d865eD398fC3ca5A5A2cDA85",
     chain: "baseSepolia",
     amount: "4",
     decimals: 18,
-    // provider: "https://sepolia.base.org",
+    chainId: 84532,
 };
 
 const chainBParams = {
     from: "0x291B0E3aA139b2bC9Ebd92168575b5c6bAD5236C",
     to: "0x48e6a467852Fa29710AaaCDB275F85db4Fa420eB",
-    tokenAddress: "0x42539F21DFc25fD9c4f118a614e32169fc16D30a",
+    tokenAddress: "0x2dcA1a80c89c81C37efa7b401e2d20c1ED99C72F",
     chain: "yellowstone",
     amount: "8",
     decimals: 18,
-    // provider: "https://ethereum-sepolia-rpc.publicnode.com",
+    chainId: 175188,
 };
 
 // wallet getters --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -114,7 +113,7 @@ export async function mintGrantBurnPKP(_action_ipfs, _mintedPKP) {
 
     console.log("transfer started..");
 
-    const transferPkpOwnershipReceipt =
+    const transferPkpOwnership =
         await litContracts.pkpNftContract.write.transferFrom(
             signerA.address,
             pkp.ethAddress,
@@ -124,14 +123,205 @@ export async function mintGrantBurnPKP(_action_ipfs, _mintedPKP) {
             }
         );
 
-    await transferPkpOwnershipReceipt.wait();
+    const receipt = await transferPkpOwnership.wait();
 
     console.log(
         "Transferred PKP ownership to itself: ",
-        transferPkpOwnershipReceipt
+        receipt
     );
     return pkp;
 }
+
+export async function depositOnChainA(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
+    console.log(
+        `deposit started from wallet A on chain A (${chainAParams.chain})..`
+    );
+    let wallet = await getWalletA();
+
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[chainAParams.chain].rpcUrls[0]
+    );
+    wallet = wallet.connect(chainAProvider);
+
+    const transactionObject = {
+        to: chainAParams.tokenAddress,
+        from: await wallet.getAddress(),
+        gasPrice: await wallet.provider.getGasPrice(),
+        // gasLimit: ethers.BigNumber.from("210000"),
+        data: generateCallData(
+            mintedPKP.ethAddress,
+            ethers.utils
+                .parseUnits(chainAParams.amount, chainAParams.decimals)
+                .toString()
+        ),
+    };
+
+    const tx = await wallet.sendTransaction(transactionObject);
+    const receipt = await tx.wait();
+
+    console.log("deposit executed: ", receipt);
+
+    console.log("depositing some funds for gas..");
+
+    // gas value differs for chains
+    const transactionObject2 = {
+        to: mintedPKP.ethAddress,
+        value: ethers.BigNumber.from("500000000000000"),
+        gasPrice: await wallet.provider.getGasPrice(),
+        // gasLimit: ethers.BigNumber.from("21000"),
+    };
+
+    const tx2 = await wallet.sendTransaction(transactionObject2);
+    const receipt2 = await tx2.wait();
+
+    console.log("gas deposit executed: ", receipt2);
+}
+
+export async function depositOnChainB(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
+    console.log(
+        `deposit started from wallet B on chain B (${chainBParams.chain})..`
+    );
+    let wallet = await getWalletB();
+
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[chainBParams.chain].rpcUrls[0]
+    );
+    wallet = wallet.connect(chainAProvider);
+
+    const transactionObject = {
+        to: chainBParams.tokenAddress,
+        from: await wallet.getAddress(),
+        gasPrice: await wallet.provider.getGasPrice(),
+        // gasLimit: ethers.BigNumber.from("21000"),
+        data: generateCallData(
+            mintedPKP.ethAddress,
+            ethers.utils
+                .parseUnits(chainBParams.amount, chainBParams.decimals)
+                .toString()
+        ),
+    };
+
+    const tx = await wallet.sendTransaction(transactionObject);
+    const receipt = await tx.wait();
+
+    console.log("deposit executed: ", receipt);
+
+    console.log("depositing some funds for gas..");
+
+    // gas value differs for chains
+    const transactionObject2 = {
+        to: mintedPKP.ethAddress,
+        value: ethers.BigNumber.from("100000000000000"),
+        gasPrice: await wallet.provider.getGasPrice(),
+        // gasLimit: ethers.BigNumber.from("21000"),
+    };
+
+    const tx2 = await wallet.sendTransaction(transactionObject2);
+    const receipt2 = await tx2.wait();
+
+    console.log("gas deposit executed: ", receipt2);
+}
+
+export async function executeSwapAction(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
+    console.log("executing action started..");
+    const sessionSigs = await sessionSigUser();
+
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[chainAParams.chain].rpcUrls[0]
+    );
+
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[chainBParams.chain].rpcUrls[0]
+    );
+
+    const gasConfigA = {
+        maxFeePerGas: ethers.BigNumber.from("2000000000"), // in wei
+        chainId: LIT_CHAINS[chainAParams.chain].chainId,
+        nonce: await chainAProvider.getTransactionCount(mintedPKP.ethAddress),
+        // gasLimit: ethers.BigNumber.from("50000"),
+    };
+
+    const gasConfigB = {
+        maxFeePerGas: ethers.BigNumber.from("1500000000"), // in wei
+        chainId: LIT_CHAINS[chainBParams.chain].chainId,
+        nonce: await chainBProvider.getTransactionCount(mintedPKP.ethAddress),
+        // gasLimit: ethers.BigNumber.from("50000"),
+    };
+
+    const authSig = await getAuthSig();
+
+    await litNodeClient.connect();
+
+    const results = await litNodeClient.executeJs({
+        ipfsId: action_ipfs,
+        sessionSigs: sessionSigs,
+        jsParams: {
+            pkpPublicKey: mintedPKP.publicKey,
+            pkpAddress: mintedPKP.ethAddress,
+            authSig: JSON.stringify(authSig),
+            chainAGasConfig: gasConfigA,
+            chainBGasConfig: gasConfigB,
+        },
+    });
+
+    console.log("results: ", results);
+
+    if (results.signatures == undefined) {
+        return;
+    }
+
+    if (results.signatures.chainBSignature == undefined) {
+        console.log("clawback A")
+    }
+
+    if (results.signatures.chainASignature == undefined) {
+        console.log("clawback A")
+    }
+
+    console.log("signatures: ", results.signatures);
+
+    const signatureA = formatSignature(results.signatures.chainASignature);
+    const signatureB = formatSignature(results.signatures.chainBSignature);
+
+    console.log("txA obj", results.response.chainATransaction);
+
+    const tx1 = await chainAProvider.sendTransaction(
+        ethers.utils.serializeTransaction(
+            results.response.chainATransaction,
+            signatureA
+        )
+    );
+    console.log(tx1);
+
+    const receipt1 = await tx1.wait();
+    const blockExplorer1 = LIT_CHAINS[chainAParams.chain].blockExplorerUrls[0];
+
+    console.log(`tx: ${blockExplorer1}/tx/${receipt1.transactionHash}`);
+
+    // console.log("txB obj", results.response.chainBTransaction);
+
+    // const tx2 = await chainBProvider.sendTransaction(
+    //     ethers.utils.serializeTransaction(
+    //         results.response.chainBTransaction,
+    //         signatureB
+    //     )
+    // );
+    // const receipt2 = await tx2.wait();
+    // const blockExplorer2 = LIT_CHAINS[chainBParams.chain].blockExplorerUrls[0];
+
+    // console.log(`tx: ${blockExplorer2}/tx/${receipt2.transactionHash}`);
+}
+
+// additional functions ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 export async function checkPermits(_action_ipfs, _mintedPKP) {
     _action_ipfs ? (action_ipfs = _action_ipfs) : null;
@@ -167,109 +357,47 @@ export async function checkPermits(_action_ipfs, _mintedPKP) {
     console.log("Addresses Permissions ", permittedAddresses);
 }
 
-export async function depositOnChainA(_action_ipfs, _mintedPKP) {
-    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
-    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
-
-    console.log(
-        `deposit started from wallet A on chain A (${chainAParams.chain})..`
-    );
-    let wallet = await getWalletA();
+export async function mintTokensOnBothChains() {
+    console.log("minting tokens on both wallets..");
+    const abi = ["function mintTo(address)"];
 
     const chainAProvider = new ethers.providers.JsonRpcProvider(
         LIT_CHAINS[chainAParams.chain].rpcUrls[0]
     );
-    wallet = wallet.connect(chainAProvider);
-
-    // sometimes you may manually need to adjust gas limit
-    const transactionObject = {
-        to: chainAParams.tokenAddress,
-        from: await wallet.getAddress(),
-        gasPrice: await wallet.provider.getGasPrice(),
-        gasLimit: ethers.BigNumber.from("200000"),
-        data: generateCallData(
-            mintedPKP.ethAddress,
-            ethers.utils
-                .parseUnits(chainAParams.amount, chainAParams.decimals)
-                .toString()
-        ),
-    };
-
-    const tx = await wallet.sendTransaction(transactionObject);
-    const receipt = await tx.wait();
-
-    console.log("deposit executed: ", receipt);
-
-    console.log("depositing some funds for gas..");
-
-    const transactionObject2 = {
-        to: mintedPKP.ethAddress,
-        value: ethers.BigNumber.from("300000"),
-        gasPrice: await wallet.provider.getGasPrice(),
-        gasLimit: ethers.BigNumber.from("2100000"),
-    };
-
-    const tx2 = await wallet.sendTransaction(transactionObject2);
-    const receipt2 = await tx2.wait();
-
-    console.log("gas deposit executed: ", receipt2);
-}
-
-export async function depositOnChainB(_action_ipfs, _mintedPKP) {
-    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
-    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
-
-    console.log(
-        `deposit started from wallet B on chain B (${chainBParams.chain})..`
-    );
-    let wallet = await getWalletB();
-
-    const chainAProvider = new ethers.providers.JsonRpcProvider(
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
         LIT_CHAINS[chainBParams.chain].rpcUrls[0]
     );
-    wallet = wallet.connect(chainAProvider);
 
-    // sometimes you may manually need to adjust gas limit
-    const transactionObject = {
-        to: chainBParams.tokenAddress,
-        from: await wallet.getAddress(),
-        gasPrice: await wallet.provider.getGasPrice(),
-        gasLimit: ethers.BigNumber.from("200000"),
-        data: generateCallData(
-            mintedPKP.ethAddress,
-            ethers.utils
-                .parseUnits(chainBParams.amount, chainBParams.decimals)
-                .toString()
-        ),
-    };
+    let signer_A = await getWalletA();
+    signer_A = signer_A.connect(chainAProvider);
+    const tokenContract_A = new ethers.Contract(
+        chainAParams.tokenAddress,
+        abi,
+        signer_A
+    );
+    const mint_A = await tokenContract_A.mintTo(signer_A.address);
+    const receiptA = await mint_A.wait();
+    console.log(receiptA);
 
-    console.log(transactionObject)
+    let signer_B = await getWalletB();
+    signer_A = signer_B.connect(chainBProvider);
+    const tokenContract_B = new ethers.Contract(
+        chainBParams.tokenAddress,
+        abi,
+        signer_B
+    );
+    const mint_B = await tokenContract_B.mintTo(signer_B.address);
+    const receiptB = await mint_B.wait();
+    console.log(receiptB);
 
-    const tx = await wallet.sendTransaction(transactionObject);
-    const receipt = await tx.wait();
-
-    console.log("deposit executed: ", receipt);
-
-    console.log("depositing some funds for gas..");
-
-    const transactionObject2 = {
-        to: mintedPKP.ethAddress,
-        value: ethers.BigNumber.from("300000"),
-        gasPrice: await wallet.provider.getGasPrice(),
-        gasLimit: ethers.BigNumber.from("2100000"),
-    };
-
-    const tx2 = await wallet.sendTransaction(transactionObject2);
-    const receipt2 = await tx2.wait();
-
-    console.log("gas deposit executed: ", receipt2);
+    console.log("deposited");
 }
 
-export async function getFundsStatus(_action_ipfs, _mintedPKP) {
+export async function getFundsStatusPKP(_action_ipfs, _mintedPKP) {
     _action_ipfs ? (action_ipfs = _action_ipfs) : null;
     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
 
-    console.log("checking balances..");
+    console.log("checking balances on pkp..");
 
     const abi = ["function balanceOf(address) view returns (uint256)"];
 
@@ -305,89 +433,71 @@ export async function getFundsStatus(_action_ipfs, _mintedPKP) {
     console.log("balance on chain B: ", balanceInTokens_2);
 }
 
-export async function executeSwapAction(_action_ipfs, _mintedPKP) {
-    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
-    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+export async function getFundsStatusWallet() {
+    console.log("checking balances on wallets..");
 
-    console.log("executing action started..");
-    const sessionSigs = await sessionSigUser();
+    const abi = ["function balanceOf(address) view returns (uint256)"];
+
+    let signer_A = await getWalletA();
+    let signer_B = await getWalletB();
 
     const chainAProvider = new ethers.providers.JsonRpcProvider(
         LIT_CHAINS[chainAParams.chain].rpcUrls[0]
     );
-
     const chainBProvider = new ethers.providers.JsonRpcProvider(
         LIT_CHAINS[chainBParams.chain].rpcUrls[0]
     );
 
-    const gasConfigA = {
-        // maxFeePerGas: ethers.BigNumber.from("100000000000"), // in wei
-        // maxPriorityFeePerGas: ethers.BigNumber.from("5000000000"), // in wei
-        // chainId: 84532,
-        // nonce:  await chainAProvider.getTransactionCount(
-        //     mintedPKP.ethAddress
-        // ),
-        gasPrice: await chainAProvider.getGasPrice(),
-        gasLimit: ethers.BigNumber.from("200000"),
-    };
-
-    const gasConfigB = {
-        // maxFeePerGas: ethers.BigNumber.from("100000000000"), // in wei
-        // maxPriorityFeePerGas: ethers.BigNumber.from("5000000000"), // in wei
-        // chainId: 175188,
-        // nonce:  await chainBProvider.getTransactionCount(
-        //     mintedPKP.ethAddress
-        // ),
-        gasPrice: await chainBProvider.getGasPrice(),
-        gasLimit: ethers.BigNumber.from("200000"),
-    }
-
-    const authSig = await getAuthSig();
-
-    await litNodeClient.connect();
-
-    const results = await litNodeClient.executeJs({
-        ipfsId: action_ipfs,
-        sessionSigs: sessionSigs,
-        jsParams: {
-            pkpPublicKey: mintedPKP.publicKey,
-            pkpAddress: mintedPKP.ethAddress,
-            authSig: JSON.stringify(authSig),
-            chainAGasConfig: gasConfigA,
-            chainBGasConfig: gasConfigB,
-        },
-    });
-
-    console.log("results: ", results);
-
-    if (results.signatures == undefined) {
-        return;
-    }
-
-    console.log("signatures: ", results.signatures);
-
-    const signatureA = formatSignature(results.signatures.chainASignature);
-    const signatureB = formatSignature(results.signatures.chainBSignature);
-
-    // console.log("txA obj", results.response.chainATransaction);
-
-    // const tx1 = await chainAProvider.sendTransaction(
-    //     ethers.utils.serializeTransaction(
-    //         results.response.chainATransaction,
-    //         signatureA
-    //     )
-    // );
-    // console.log("swap tx1: ", tx1);
-
-    console.log("txB obj", results.response.chainBTransaction);
-
-    const tx2 = await chainBProvider.sendTransaction(
-        ethers.utils.serializeTransaction(
-            results.response.chainBTransaction,
-            signatureB
-        )
+    signer_A = signer_A.connect(chainAProvider);
+    const tokenContract_CA_WA = new ethers.Contract(
+        chainAParams.tokenAddress,
+        abi,
+        signer_A
     );
-    console.log("swap tx2: ", tx2);
+    const balance_CA_WA = ethers.utils.formatUnits(
+        await tokenContract_CA_WA.balanceOf(signer_A.address),
+        chainAParams.decimals
+    );
+
+    signer_B = signer_B.connect(chainAProvider);
+    const tokenContract_CA_WB = new ethers.Contract(
+        chainAParams.tokenAddress,
+        abi,
+        signer_B
+    );
+    const balance_CA_WB = ethers.utils.formatUnits(
+        await tokenContract_CA_WB.balanceOf(signer_B.address),
+        chainAParams.decimals
+    );
+
+    signer_A = signer_A.connect(chainBProvider);
+    const tokenContract_CB_WA = new ethers.Contract(
+        chainBParams.tokenAddress,
+        abi,
+        signer_A
+    );
+    const balance_CB_WA = ethers.utils.formatUnits(
+        await tokenContract_CB_WA.balanceOf(signer_A.address),
+        chainBParams.decimals
+    );
+
+    signer_B = signer_B.connect(chainBProvider);
+    const tokenContract_CB_WB = new ethers.Contract(
+        chainBParams.tokenAddress,
+        abi,
+        signer_B
+    );
+    const balance_CB_WB = ethers.utils.formatUnits(
+        await tokenContract_CB_WB.balanceOf(signer_B.address),
+        chainBParams.decimals
+    );
+
+    console.log(
+        `Chain A:\n${signer_A.address}, ${balance_CA_WA} ${signer_B.address}, ${balance_CA_WB}`
+    );
+    console.log(
+        `Chain B:\n${signer_A.address}, ${balance_CB_WA} ${signer_B.address}, ${balance_CB_WB}`
+    );
 }
 
 // helper functions ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -429,11 +539,6 @@ export async function uploadViaPinata(_litActionCode) {
 async function stringToBytes(_string) {
     const bytes = `0x${Buffer.from(bs58.decode(_string)).toString("hex")}`;
     return bytes;
-}
-
-export function BytesToString(_bytesString) {
-    const string = bs58.encode(_bytesString);
-    return string;
 }
 
 function generateCallData(counterParty, amount) {
@@ -524,54 +629,4 @@ function formatSignature(signature) {
         s: `0x${signature.s}`,
     });
     return encodedSig;
-}
-
-export async function mintTokensOnBothChains() {
-    console.log("minting tokens on both wallets..");
-    const abi = [
-        "function mintTo(address)",
-        "function balanceOf(address) view returns (uint256)",
-    ];
-
-    const chainAProvider = new ethers.providers.JsonRpcProvider(
-        LIT_CHAINS[chainAParams.chain].rpcUrls[0]
-    );
-    const chainBProvider = new ethers.providers.JsonRpcProvider(
-        LIT_CHAINS[chainBParams.chain].rpcUrls[0]
-    );
-
-    let signer_A = await getWalletA();
-    signer_A = signer_A.connect(chainAProvider);
-    const tokenContract_A = new ethers.Contract(
-        chainAParams.tokenAddress,
-        abi,
-        signer_A
-    );
-    const mint_A = await tokenContract_A.mintTo(signer_A.address);
-    mint_A.wait();
-    console.log(mint_A);
-
-    let signer_B = await getWalletB();
-    signer_A = signer_B.connect(chainBProvider);
-    const tokenContract_B = new ethers.Contract(
-        chainBParams.tokenAddress,
-        abi,
-        signer_B
-    );
-    const mint_B = await tokenContract_B.mintTo(signer_B.address);
-    mint_B.wait();
-    console.log(mint_B);
-
-    const ownerBalance_A = ethers.utils.formatUnits(
-        await tokenContract_A.balanceOf(signer_A.address),
-        chainAParams.decimals
-    );
-
-    const ownerBalance_B = ethers.utils.formatUnits(
-        await tokenContract_B.balanceOf(signer_B.address),
-        chainBParams.decimals
-    );
-
-    console.log("owner balance on chain A: ", ownerBalance_A);
-    console.log("owner balance on chain B: ", ownerBalance_B);
 }
