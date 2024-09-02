@@ -223,7 +223,7 @@ export async function executeSwapAction(_action_ipfs, _mintedPKP) {
     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
 
     console.log("executing action started..");
-    const sessionSigs = await sessionSigUser();
+    const sessionSigs = await sessionSigEOA();
     const authSig = await getAuthSig();
 
     const chainAProvider = new ethers.providers.JsonRpcProvider(
@@ -555,7 +555,7 @@ function generateCallData(counterParty, amount) {
     ]);
 }
 
-export async function sessionSigUser() {
+export async function sessionSigEOA() {
     console.log("creating session sigs..");
     const ethersSigner = await getWalletA();
 
