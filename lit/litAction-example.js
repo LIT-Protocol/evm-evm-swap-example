@@ -34,13 +34,8 @@ const go = async () => {
         chain: chainBCondition.chain,
     });
 
-    console.log(
-        "chainAConditionsPass: ",
-        chainAConditionsPass,
-        "chainBConditionsPass: ",
-        chainBConditionsPass
-    );
-
+    console.log("chainAConditionsPass: ", chainAConditionsPass, "chainBConditionsPass: ", chainBConditionsPass);
+    
     const hashTransaction = (tx) => {
         return ethers.utils.arrayify(
             ethers.utils.keccak256(
@@ -60,46 +55,44 @@ const go = async () => {
             publicKey: pkpPublicKey,
             sigName: "chainBSignature",
         });
-
-        if (chainAConditionsPass && chainBConditionsPass) {
-            await generateSwapTransactions();
-            return;
-        }
-
-        if (chainAConditionsPass) {
-            await Lit.Actions.signEcdsa({
-                toSign: hashTransaction(chainAClawbackTransaction),
-                publicKey: pkpPublicKey,
-                sigName: "chainASignature",
-            });
-            Lit.Actions.setResponse({
-                response: JSON.stringify({
-                    chainATransaction: chainAClawbackTransaction,
-                }),
-            });
-            return;
-        }
-
-        if (chainBConditionsPass) {
-            await Lit.Actions.signEcdsa({
-                toSign: hashTransaction(chainBClawbackTransaction),
-                publicKey: pkpPublicKey,
-                sigName: "chainBSignature",
-            });
-            Lit.Actions.setResponse({
-                response: JSON.stringify({
-                    chainBTransaction: chainBClawbackTransaction,
-                }),
-            });
-            return;
-        }
-
         Lit.Actions.setResponse({
             response: JSON.stringify({ chainATransaction, chainBTransaction }),
         });
     };
 
+    if (chainAConditionsPass && chainBConditionsPass) {
+        await generateSwapTransactions();
+        return;
+    }
+
+    if (chainAConditionsPass) {
+        await Lit.Actions.signEcdsa({
+            toSign: hashTransaction(chainAClawbackTransaction),
+            publicKey: pkpPublicKey,
+            sigName: "chainASignature",
+        });
+        Lit.Actions.setResponse({
+            response: JSON.stringify({
+                chainATransaction: chainAClawbackTransaction,
+            }),
+        });
+        return;
+    }
+
+    if (chainBConditionsPass) {
+        await Lit.Actions.signEcdsa({
+            toSign: hashTransaction(chainBClawbackTransaction),
+            publicKey: pkpPublicKey,
+            sigName: "chainBSignature",
+        });
+        Lit.Actions.setResponse({
+            response: JSON.stringify({
+                chainBTransaction: chainBClawbackTransaction,
+            }),
+        });
+        return;
+    }
+
     Lit.Actions.setResponse({ response: "Conditions for swap not met!" });
-};
-go();
+}; go();
 `

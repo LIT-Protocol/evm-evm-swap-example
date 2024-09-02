@@ -1,6 +1,11 @@
 import { LitNodeClient } from "@lit-protocol/lit-node-client";
 import { LitContracts } from "@lit-protocol/contracts-sdk";
-import { LitNetwork, AuthMethodScope, LIT_CHAINS } from "@lit-protocol/constants";
+import {
+    LitNetwork,
+    AuthMethodType,
+    AuthMethodScope,
+    LIT_CHAINS,
+} from "@lit-protocol/constants";
 import { LitAbility } from "@lit-protocol/types";
 import {
     LitActionResource,
@@ -93,37 +98,35 @@ export async function mintGrantBurnPKP(_action_ipfs, _mintedPKP) {
     });
     await litContracts.connect();
 
-    const mintPkp = await litContracts.pkpNftContractUtils.write.mint();
-    const pkp = mintPkp.pkp;
-    console.log("PKP: ", pkp);
+    const bytesAction = await stringToBytes(action_ipfs);
 
-    console.log("adding permitted action..");
+    const pkpMintCost = await litContracts.pkpNftContract.read.mintCost();
 
-    await litContracts.addPermittedAction({
-        pkpTokenId: pkp.tokenId,
-        ipfsId: action_ipfs,
-        authMethodScopes: [AuthMethodScope.SignAnything],
-    });
-
-    console.log("transfer started..");
-
-    const transferPkpOwnership =
-        await litContracts.pkpNftContract.write.transferFrom(
-            signerA.address,
-            pkp.ethAddress,
-            pkp.tokenId,
+    const tx =
+        await litContracts.pkpHelperContract.write.mintNextAndAddAuthMethods(
+            AuthMethodType.LitAction,
+            [AuthMethodType.LitAction],
+            [bytesAction],
+            ["0x"],
+            [[AuthMethodScope.SignAnything]],
+            false,
+            true,
             {
-                gasLimit: 125_000,
+                value: pkpMintCost,
+                maxFeePerGas: ethers.BigNumber.from("1800000000"),
             }
         );
 
-    const receipt = await transferPkpOwnership.wait();
-
+    const receipt = await tx.wait();
     console.log(
-        "Transferred PKP ownership to itself: ",
+        "pkp minted, added lit action as auth, and transferred to itself: ",
         receipt
     );
-    return pkp;
+
+    const pkpInfo = await getPkpInfoFromMintReceipt(receipt, litContracts);
+    console.log("pkp: ", pkpInfo);
+
+    return pkpInfo;
 }
 
 export async function depositOnChainA(_action_ipfs, _mintedPKP) {
@@ -197,7 +200,7 @@ export async function depositOnChainB(_action_ipfs, _mintedPKP) {
                 .toString()
         ),
     };
-    
+
     const tx = await wallet.sendTransaction(transactionObject);
     const receipt = await tx.wait();
 
@@ -267,20 +270,14 @@ export async function executeSwapAction(_action_ipfs, _mintedPKP) {
 
     if (results.signatures == undefined) {
         return;
-    }
-
-    else if (results.signatures.chainBSignature == undefined) {
-        console.log("executing clawbackA tx..")
+    } else if (results.signatures.chainBSignature == undefined) {
+        console.log("executing clawbackA tx..");
         await executeTxA(results, chainAProvider);
-    }
-
-    else if (results.signatures.chainASignature == undefined) {
-        console.log("executing clawbackB tx..")
+    } else if (results.signatures.chainASignature == undefined) {
+        console.log("executing clawbackB tx..");
         await executeTxB(results, chainBProvider);
-    }
-
-    else {
-        console.log("executing swap txs..")
+    } else {
+        console.log("executing swap txs..");
         await executeTxA(results, chainAProvider);
         await executeTxB(results, chainBProvider);
     }
@@ -288,9 +285,9 @@ export async function executeSwapAction(_action_ipfs, _mintedPKP) {
 
 async function executeTxA(results, chainAProvider) {
     const signatureA = formatSignature(results.signatures.chainASignature);
-    
+
     // console.log("txA obj", results.response.chainATransaction);
-    
+
     const tx1 = await chainAProvider.sendTransaction(
         ethers.utils.serializeTransaction(
             results.response.chainATransaction,
@@ -298,10 +295,10 @@ async function executeTxA(results, chainAProvider) {
         )
     );
     console.log(tx1);
-    
+
     const receipt1 = await tx1.wait();
     const blockExplorer1 = LIT_CHAINS[chainAParams.chain].blockExplorerUrls[0];
-    
+
     console.log(`tx: ${blockExplorer1}/tx/${receipt1.transactionHash}`);
 }
 
@@ -329,7 +326,7 @@ export async function checkPermits(_action_ipfs, _mintedPKP) {
     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
 
     console.log("checking perms..");
-    
+
     const litContracts = new LitContracts({
         network: LitNetwork.DatilDev,
         debug: false,
@@ -544,6 +541,25 @@ async function stringToBytes(_string) {
     const bytes = `0x${Buffer.from(bs58.decode(_string)).toString("hex")}`;
     return bytes;
 }
+
+const getPkpInfoFromMintReceipt = async (txReceipt, litContractsClient) => {
+    const pkpMintedEvent = txReceipt.events.find(
+        (event) =>
+            event.topics[0] ===
+            "0x3b2cc0657d0387a736293d66389f78e4c8025e413c7a1ee67b7707d4418c46b8"
+    );
+
+    const publicKey = "0x" + pkpMintedEvent.data.slice(130, 260);
+    const tokenId = ethers.utils.keccak256(publicKey);
+    const ethAddress =
+        await litContractsClient.pkpNftContract.read.getEthAddress(tokenId);
+
+    return {
+        tokenId: ethers.BigNumber.from(tokenId).toString(),
+        publicKey,
+        ethAddress,
+    };
+};
 
 function generateCallData(counterParty, amount) {
     const transferInterface = new ethers.utils.Interface([
