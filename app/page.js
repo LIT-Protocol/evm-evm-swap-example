@@ -2,28 +2,33 @@
 import { useState } from "react";
 import {
     createLitAction,
+    mintGrantBurnPKP,
+    userASignsSwap,
+    userBSignsSwap,
+    executeSwapActionWithGenerate,
+    executeSwapActionWithExecute,
+    mintTokensOnBothChains,
     depositOnChainA,
     depositOnChainB,
-    mintGrantBurnPKP,
-    executeSwapAction,
-    checkPermits,
-    mintTokensOnBothChains,
+    checkPermitsPKP,
     getFundsStatusPKP,
-    getFundsStatusWallet
-} from "../lit/utils.js";
+    getFundsStatusUserWallets,
+    executeTestAction,
+} from "../lit-refactor/utils";
 
 export default function Home() {
     const [ipfsId, setIpfsId] = useState(null);
     const [pkp, setPkp] = useState(null);
+    const [swapObject, setSwapObject] = useState(null);
+    const [swapObjectHash, setSwapObjectHash] = useState(null);
+    const [authSigAlice, setAuthSigAlice] = useState(null);
+    const [authSigBob, setAuthSigBob] = useState(null);
 
     async function createLitActionCall() {
-        const ipfs = await createLitAction();
-        setIpfsId(ipfs);
-    }
-
-    async function mintGrantBurnPKPCall() {
-        const mintedPkp = await mintGrantBurnPKP(ipfsId);
-        setPkp(mintedPkp);
+        const res = await createLitAction();
+        setIpfsId(res.ipfsCid);
+        setSwapObject(res.swapObject);
+        setSwapObjectHash(res.swapObjectHash);
     }
 
     return (
@@ -34,29 +39,58 @@ export default function Home() {
             <p>ipfsId, {ipfsId}</p>
             <p className="mb-[1.5rem]">pkpAddress, {pkp?.ethAddress}</p>
             <button onClick={createLitActionCall}>Generate Lit Action</button>
-            <button onClick={mintGrantBurnPKPCall}>Mint Grant Burn PKP</button>
+            <button
+                onClick={async () => setPkp(await mintGrantBurnPKP(ipfsId))}
+            >
+                Mint Grant Burn PKP
+            </button>
+            <button
+                onClick={async () =>
+                    setAuthSigAlice(await userASignsSwap(swapObject, swapObjectHash))
+                }
+            >
+                Sign Swap by Alice
+            </button>
+            <button
+                onClick={async () =>
+                    setAuthSigBob(await userBSignsSwap(swapObject, swapObjectHash))
+                }
+            >
+                Sign Swap by Bob
+            </button>
+            <button
+                onClick={async () =>
+                    setAuthSigBob(await executeSwapActionWithGenerate(ipfsId, pkp, swapObject, authSigAlice, authSigBob))
+                }
+            >
+                Call Action with Generate
+            </button>
+            <button
+                className="mb-[1.5rem]"
+                onClick={async () =>
+                    setAuthSigBob(await executeSwapActionWithExecute(ipfsId))
+                }
+            >
+                Call Action with Execute
+            </button>
+
+            <button onClick={() => mintTokensOnBothChains(ipfsId, pkp)}>
+                Mint Test Tokens to Wallets
+            </button>
             <button onClick={() => depositOnChainA(ipfsId, pkp)}>
                 Deposit A
             </button>
             <button onClick={() => depositOnChainB(ipfsId, pkp)}>
                 Deposit B
             </button>
-            <button
-                className="mb-[1.5rem]"
-                onClick={() => executeSwapAction(ipfsId, pkp)}
-            >
-                Execute Swap Action
-            </button>
-            <button onClick={() => checkPermits(ipfsId, pkp)}>
+            <button onClick={() => checkPermitsPKP(ipfsId, pkp)}>
                 Check Permissions on PKP
             </button>
-            <button onClick={() => mintTokensOnBothChains(ipfsId, pkp)}>
-                Mint Test Tokens to Wallets
-            </button>
+
             <button onClick={() => getFundsStatusPKP(ipfsId, pkp)}>
                 Funds Status on PKP
             </button>
-            <button onClick={getFundsStatusWallet}>
+            <button onClick={getFundsStatusUserWallets}>
                 Funds Status on Wallet
             </button>
         </div>

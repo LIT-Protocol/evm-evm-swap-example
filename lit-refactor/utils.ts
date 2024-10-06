@@ -19,6 +19,7 @@ import {
 import { ethers } from "ethers";
 import bs58 from "bs58";
 import { litActionCode } from "./litAction";
+import { litActionCode as testAction } from "./testAction";
 
 interface Pkp {
     publicKey: string;
@@ -89,9 +90,34 @@ const litNodeClient = new LitNodeClient({
     debug: false,
 })
 
+// Initially connect wallets to yellowstone for minting as well as encryption conditions
+function getEvmWalletA() {
+    const provider = new ethers.providers.JsonRpcProvider(
+        // LIT_RPC.CHRONICLE_YELLOWSTONE
+        LIT_CHAINS["ethereum"].rpcUrls[0]
+    );
+    const wallet = new ethers.Wallet(
+        process.env.NEXT_PUBLIC_PRIVATE_KEY_1,
+        provider
+    );
+    return wallet;
+}
+
+function getEvmWalletB() {
+    const provider = new ethers.providers.JsonRpcProvider(
+        // LIT_RPC.CHRONICLE_YELLOWSTONE
+        LIT_CHAINS["ethereum"].rpcUrls[0]
+    );
+    const wallet = new ethers.Wallet(
+        process.env.NEXT_PUBLIC_PRIVATE_KEY_1,
+        provider
+    );
+    return wallet;
+}
+
 export async function createLitAction() {
     console.log("creating lit action..");
-    const swapObject: SwapObject = {
+    swapObject = {
         chainA: swapParams.chainA,
         chainAId: LIT_CHAINS[swapParams.chainA].chainId,
         chainB: swapParams.chainB,
@@ -104,8 +130,8 @@ export async function createLitAction() {
         contractB: swapParams.contractB,
         currencyAType: swapParams.currencyAType,
         currencyBType: swapParams.currencyBType,
-        expirationA: (Math.floor(Date.now() / 1000) + 60 * 60 * 24 * parseInt(swapParams.expirationDays)).toString(),
-        expirationB: (Math.floor(Date.now() / 1000) + 60 * 60 * 24 * parseInt(swapParams.expirationDays)).toString(),
+        expirationA: new Date(Date.now() + 1000 * 60 * 60 * 24 * parseInt(swapParams.expirationDays)).toISOString(),
+        expirationB: new Date(Date.now() + 1000 * 60 * 60 * 24 * parseInt(swapParams.expirationDays)).toISOString(),
     };
 
     const ipfsCid = await uploadViaPinata(litActionCode);
@@ -125,18 +151,22 @@ export async function createLitAction() {
 
     console.log("Lit Action code:\n", litActionCode);
     console.log("IPFS CID: ", ipfsCid);
-    console.log("Swap Object Hash: ", swapObjectHash);
-    return ipfsCid;
+    return { ipfsCid, swapObject, swapObjectHash };
 }
 
 export async function mintGrantBurnPKP(_action_ipfs: string) {
     _action_ipfs ? null : (_action_ipfs = action_ipfs);
 
     console.log("minting started..");
-    const signer = getEvmWalletA();
+    let wallet = getEvmWalletA();
+
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_RPC.CHRONICLE_YELLOWSTONE
+    );
+    wallet = wallet.connect(chainAProvider);
 
     const litContracts = new LitContracts({
-        signer: signer,
+        signer: wallet,
         network: LitNetwork.DatilDev,
         debug: false,
     });
@@ -173,69 +203,62 @@ export async function mintGrantBurnPKP(_action_ipfs: string) {
     return pkpInfo;
 }
 
-export async function userASignsSwap() {
+export async function userASignsSwap(_swapObject, _swapObjectHash) {
+    console.log("signing swap object by user Alice..");
     const ethersWalletAlice = getEvmWalletA();
+
+    console.log("_swapObjectHash", _swapObjectHash)
 
     const siweMessageAlice = await createSiweMessage({
         walletAddress: ethersWalletAlice.address,
         nonce: await litNodeClient.getLatestBlockhash(),
-        expiration: swapObject.expirationA,
-        statement: swapObjectHash
+        expiration: _swapObject.expirationA,
+        statement: _swapObjectHash,
     });
     
     authSigAlice = await generateAuthSig({
         signer: ethersWalletAlice,
         toSign: siweMessageAlice,
     });
-    
+
+    console.log("swap object signed by Alice", authSigAlice);
+    return authSigAlice;
 }
 
-export async function userBSignsSwap() {
+export async function userBSignsSwap(_swapObject, _swapObjectHash) {
+    console.log("signing swap object by user Bob..");
     const ethersWalletBob = getEvmWalletB();
 
     const siweMessageBob = await createSiweMessage({
         walletAddress: ethersWalletBob.address,
         nonce: await litNodeClient.getLatestBlockhash(),
-        expiration: swapObject.expirationB,
-        statement: swapObjectHash
+        expiration: _swapObject.expirationB,
+        statement: _swapObjectHash,
     });
+
     authSigBob = await generateAuthSig({
         signer: ethersWalletBob,
         toSign: siweMessageBob,
     });
+
+    console.log("swap object signed by Bob", authSigBob)
+    return authSigBob;
 }
 
-export async function executeSwapAction(_action_ipfs, _mintedPKP) {
+export async function executeSwapActionWithGenerate(_action_ipfs, _mintedPKP, _swapObject, _authSigAlice: AuthSig, _authSigBob: AuthSig) {
     _action_ipfs ? (action_ipfs = _action_ipfs) : null;
     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
 
-    console.log("executing action started..");
+    console.log("_action_ipfs", _action_ipfs)
+    console.log("_mintedPKP", _mintedPKP)
+    console.log("_swapObject", _swapObject)
+    console.log("_authSigAlice", _authSigAlice)
+    console.log("_authSigBob", _authSigBob)
+
+    console.log("executing action with generate flag started..");
 
     const signer = getEvmWalletA();
     const sessionSigs = await sessionSigEOA(signer, _mintedPKP);
-
-    const chainAProvider = new ethers.providers.JsonRpcProvider(
-        LIT_CHAINS[swapObject.chainA].rpcUrls[0]
-    );
-
-    const chainBProvider = new ethers.providers.JsonRpcProvider(
-        LIT_CHAINS[swapObject.chainB].rpcUrls[0]
-    );
-
-    // sometimes you may need to configure gas values manually, try checking test minting methods for more info
-    const gasConfigA = {
-        gasLimit: ethers.BigNumber.from("54000"),
-        maxPriorityFeePerGas: ethers.BigNumber.from("1500000000"),
-        maxFeePerGas: ethers.BigNumber.from("1510000362"),
-        chainId: LIT_CHAINS[swapObject.chainA].chainId,
-        nonce: await chainAProvider.getTransactionCount(mintedPKP.ethAddress),
-    };
-
-    const gasConfigB = {
-        maxFeePerGas: ethers.BigNumber.from("1500000000"),
-        chainId: LIT_CHAINS[swapObject.chainB].chainId,
-        nonce: await chainBProvider.getTransactionCount(mintedPKP.ethAddress),
-    };
 
     await litNodeClient.connect();
 
@@ -245,32 +268,70 @@ export async function executeSwapAction(_action_ipfs, _mintedPKP) {
         jsParams: {
             pkpPublicKey: mintedPKP.publicKey,
             pkpAddress: mintedPKP.ethAddress,
-            swapObject,
-            userAAuthSig: authSigAlice,
-            userBAuthSig: authSigBob,
-            chainAGasConfig: gasConfigA,
-            chainBGasConfig: gasConfigB,
+            swapObject: _swapObject,
+            userAAuthSig: JSON.stringify(_authSigAlice),
+            userBAuthSig: JSON.stringify(_authSigBob),
+            flag: "generate",
+        },
+    });
+
+    console.log("results: ", results);
+}
+
+export async function executeSwapActionWithExecute(_action_ipfs, _mintedPKP, _encryptionMetadata) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
+    console.log("executing action with execute flag started..");
+
+    const signer = getEvmWalletA();
+    const sessionSigs = await sessionSigEOA(signer, _mintedPKP);
+
+    await litNodeClient.connect();
+
+    const results = await litNodeClient.executeJs({
+        ipfsId: action_ipfs,
+        sessionSigs: sessionSigs,
+        jsParams: {
+            pkpPublicKey: mintedPKP.publicKey,
+            pkpAddress: mintedPKP.ethAddress,
+            encryptionMetadata: _encryptionMetadata,
+            flag: "execute",
         },
     });
 
     console.log("results: ", results);
 
-    if (results.signatures == undefined) {
-        return;
-    } else if (!results?.signatures?.chainBSignature) {
-        console.log("executing clawbackA tx..");
-        await broadcastOnChainA(results, chainAProvider);
-    } else if (!results?.signatures?.chainBSignature) {
-        console.log("executing clawbackB tx..");
-        await broadcastOnChainB(results, chainBProvider);
-    } else {
-        console.log("executing swap txs..");
-        await broadcastOnChainA(results, chainAProvider);
-        await broadcastOnChainB(results, chainBProvider);
-    }
+    // if (results.signatures == undefined) {
+    //     return;
+    // } else if (!results?.signatures?.chainBSignature) {
+    //     console.log("executing clawbackA tx..");
+    //     await broadcastOnChainA(results, chainAProvider);
+    // } else if (!results?.signatures?.chainBSignature) {
+    //     console.log("executing clawbackB tx..");
+    //     await broadcastOnChainB(results, chainBProvider);
+    // } else {
+    //     console.log("executing swap txs..");
+    //     await broadcastOnChainA(results, chainAProvider);
+    //     await broadcastOnChainB(results, chainBProvider);
+    // }
 }
 
-async function broadcastOnChainA(results, chainAProvider) {
+async function broadcastOnChainA(results, _swapObject, _mintedPKP) {
+
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[_swapObject.chainA].rpcUrls[0]
+    );
+
+    // sometimes you may need to configure gas values manually, try checking test minting methods for more info
+    const gasConfigA = {
+        gasLimit: ethers.BigNumber.from("54000"),
+        maxPriorityFeePerGas: ethers.BigNumber.from("1500000000"),
+        maxFeePerGas: ethers.BigNumber.from("1510000362"),
+        chainId: LIT_CHAINS[_swapObject.chainA].chainId,
+        nonce: await chainAProvider.getTransactionCount(_mintedPKP.ethAddress),
+    };
+
     const signatureA = formatSignature(results.signatures.chainASignature);
 
     const tx1 = await chainAProvider.sendTransaction(
@@ -287,7 +348,18 @@ async function broadcastOnChainA(results, chainAProvider) {
     console.log(`tx: ${blockExplorer1}/tx/${receipt1.transactionHash}`);
 }
 
-async function broadcastOnChainB(results, chainBProvider) {
+async function broadcastOnChainB(results, _swapObject, _mintedPKP) {
+    
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[_swapObject.chainB].rpcUrls[0]
+    );
+
+    const gasConfigB = {
+        maxFeePerGas: ethers.BigNumber.from("1500000000"),
+        chainId: LIT_CHAINS[_swapObject.chainB].chainId,
+        nonce: await chainBProvider.getTransactionCount(_mintedPKP.ethAddress),
+    };
+
     const signatureB = formatSignature(results.signatures.chainBSignature);
 
     const tx2 = await chainBProvider.sendTransaction(
@@ -304,29 +376,7 @@ async function broadcastOnChainB(results, chainBProvider) {
 
 // helper function -----------------------------------
 
-function getEvmWalletA() {
-    const provider = new ethers.providers.JsonRpcProvider(
-        LIT_RPC.CHRONICLE_YELLOWSTONE
-    );
-    const wallet = new ethers.Wallet(
-        process.env.NEXT_PUBLIC_PRIVATE_KEY_1,
-        provider
-    );
-    return wallet;
-}
-
-function getEvmWalletB() {
-    const provider = new ethers.providers.JsonRpcProvider(
-        LIT_RPC.CHRONICLE_YELLOWSTONE
-    );
-    const wallet = new ethers.Wallet(
-        process.env.NEXT_PUBLIC_PRIVATE_KEY_1,
-        provider
-    );
-    return wallet;
-}
-
-export async function uploadViaPinata(_litActionCode: string) {
+async function uploadViaPinata(_litActionCode: string) {
     const formData = new FormData();
 
     const file = new File([_litActionCode], "Action.txt", {
@@ -441,274 +491,303 @@ function formatSignature(signature) {
 
 // additional functions ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-// export async function depositOnChainA(_action_ipfs, _mintedPKP) {
-//     _action_ipfs ? (action_ipfs = _action_ipfs) : null;
-//     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+export async function depositOnChainA(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
 
-//     console.log(
-//         `deposit started from wallet A on chain A (${chainAParams.chain})..`
-//     );
-//     let wallet = await getWalletA();
+    console.log(
+        `deposit started from wallet A on chain A (${swapObject.chainA})..`
+    );
+    let wallet = getEvmWalletA();
 
-//     const chainAProvider = new ethers.providers.JsonRpcProvider(
-//         LIT_CHAINS[chainAParams.chain].rpcUrls[0]
-//     );
-//     wallet = wallet.connect(chainAProvider);
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[swapObject.chainA].rpcUrls[0]
+    );
+    wallet = wallet.connect(chainAProvider);
 
-//     // sometimes you may need to add gasLimit
-//     const transactionObject = {
-//         to: chainAParams.tokenAddress,
-//         from: await wallet.getAddress(),
-//         data: generateCallData(
-//             mintedPKP.ethAddress,
-//             ethers.utils
-//                 .parseUnits(chainAParams.amount, chainAParams.decimals)
-//                 .toString()
-//         ),
-//     };
+    // sometimes you may need to add gasLimit
+    const transactionObject = {
+        to: swapObject.contractA,
+        from: await wallet.getAddress(),
+        data: generateCallData(
+            mintedPKP.ethAddress,
+            swapObject.amountA
+        ),
+    };
 
-//     const tx = await wallet.sendTransaction(transactionObject);
-//     const receipt = await tx.wait();
+    const tx = await wallet.sendTransaction(transactionObject);
+    const receipt = await tx.wait();
 
-//     console.log("token deposit executed: ", receipt);
+    console.log("token deposit executed: ", receipt);
 
-//     console.log("depositing some funds for gas..");
+    console.log("depositing some funds for gas..");
 
-//     // gas value differs for chains, check explorer for more info
-//     const transactionObject2 = {
-//         to: mintedPKP.ethAddress,
-//         value: ethers.BigNumber.from("1000000000000000"),
-//         gasPrice: await chainAProvider.getGasPrice(),
-//     };
+    // gas value differs for chains, check explorer for more info
+    const transactionObject2 = {
+        to: mintedPKP.ethAddress,
+        value: ethers.BigNumber.from("1000000000000000"),
+        gasPrice: await chainAProvider.getGasPrice(),
+    };
 
-//     const tx2 = await wallet.sendTransaction(transactionObject2);
-//     const receipt2 = await tx2.wait();
+    const tx2 = await wallet.sendTransaction(transactionObject2);
+    const receipt2 = await tx2.wait();
 
-//     console.log("gas deposit executed: ", receipt2);
-// }
+    console.log("gas deposit executed: ", receipt2);
+}
 
-// export async function depositOnChainB(_action_ipfs, _mintedPKP) {
-//     _action_ipfs ? (action_ipfs = _action_ipfs) : null;
-//     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+export async function depositOnChainB(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
 
-//     console.log(
-//         `deposit started from wallet B on chain B (${chainBParams.chain})..`
-//     );
-//     let wallet = await getWalletB();
+    console.log(
+        `deposit started from wallet B on chain B (${swapObject.chainB})..`
+    );
+    let wallet = getEvmWalletB();
 
-//     const chainBProvider = new ethers.providers.JsonRpcProvider(
-//         LIT_CHAINS[chainBParams.chain].rpcUrls[0]
-//     );
-//     wallet = wallet.connect(chainBProvider);
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[swapObject.chainB].rpcUrls[0]
+    );
+    wallet = wallet.connect(chainBProvider);
 
-//     const transactionObject = {
-//         to: chainBParams.tokenAddress,
-//         from: await wallet.getAddress(),
-//         gasPrice: await chainBProvider.getGasPrice(),
-//         data: generateCallData(
-//             mintedPKP.ethAddress,
-//             ethers.utils
-//                 .parseUnits(chainBParams.amount, chainBParams.decimals)
-//                 .toString()
-//         ),
-//     };
+    const transactionObject = {
+        to: swapObject.contractA,
+        from: await wallet.getAddress(),
+        gasPrice: await chainBProvider.getGasPrice(),
+        data: generateCallData(
+            mintedPKP.ethAddress,
+            swapObject.amountB
+        ),
+    };
 
-//     const tx = await wallet.sendTransaction(transactionObject);
-//     const receipt = await tx.wait();
+    const tx = await wallet.sendTransaction(transactionObject);
+    const receipt = await tx.wait();
 
-//     console.log("token deposit executed: ", receipt);
+    console.log("token deposit executed: ", receipt);
 
-//     console.log("depositing some funds for gas..");
+    console.log("depositing some funds for gas..");
 
-//     // gas value differs for chains, check explorer for more info
-//     const transactionObject2 = {
-//         to: mintedPKP.ethAddress,
-//         value: ethers.BigNumber.from("100000000000000"),
-//         gasPrice: await wallet.provider.getGasPrice(),
-//     };
+    // gas value differs for chains, check explorer for more info
+    const transactionObject2 = {
+        to: mintedPKP.ethAddress,
+        value: ethers.BigNumber.from("100000000000000"),
+        gasPrice: await wallet.provider.getGasPrice(),
+    };
 
-//     const tx2 = await wallet.sendTransaction(transactionObject2);
-//     const receipt2 = await tx2.wait();
+    const tx2 = await wallet.sendTransaction(transactionObject2);
+    const receipt2 = await tx2.wait();
 
-//     console.log("gas deposit executed: ", receipt2);
-// }
+    console.log("gas deposit executed: ", receipt2);
+}
 
-// export async function checkPermits(_action_ipfs, _mintedPKP) {
-//     _action_ipfs ? (action_ipfs = _action_ipfs) : null;
-//     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+function generateCallData(counterParty, amount) {
+    const transferInterface = new ethers.utils.Interface([
+        "function transfer(address, uint256) returns (bool)",
+    ]);
+    return transferInterface.encodeFunctionData("transfer", [
+        counterParty,
+        amount,
+    ]);
+}
 
-//     console.log("checking perms..");
+export async function checkPermitsPKP(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
 
-//     const litContracts = new LitContracts({
-//         network: LitNetwork.DatilDev,
-//         debug: false,
-//     });
-//     await litContracts.connect();
+    console.log("checking perms..");
 
-//     let permittedActions =
-//         await litContracts.pkpPermissionsContract.read.getPermittedActions(
-//             mintedPKP.tokenId
-//         );
+    const litContracts = new LitContracts({
+        network: LitNetwork.DatilDev,
+        debug: false,
+    });
+    await litContracts.connect();
 
-//     let checkGeneratedAction = await stringToBytes(action_ipfs);
+    let permittedActions =
+        await litContracts.pkpPermissionsContract.read.getPermittedActions(
+            mintedPKP.tokenId
+        );
 
-//     let permittedAuthMethods =
-//         await litContracts.pkpPermissionsContract.read.getPermittedAuthMethods(
-//             mintedPKP.tokenId
-//         );
-//     let permittedAddresses =
-//         await litContracts.pkpPermissionsContract.read.getPermittedAddresses(
-//             mintedPKP.tokenId
-//         );
+    let checkGeneratedAction = `0x${Buffer.from(bs58.decode(_action_ipfs)).toString("hex")}`;
 
-//     console.log("ipfs ", action_ipfs);
-//     console.log("ipfs hex ", checkGeneratedAction);
-//     console.log("Actions Permissions ", permittedActions);
-//     console.log("Auth methods Permissions ", permittedAuthMethods);
-//     console.log("Addresses Permissions ", permittedAddresses);
-// }
+    let permittedAuthMethods =
+        await litContracts.pkpPermissionsContract.read.getPermittedAuthMethods(
+            mintedPKP.tokenId
+        );
+    let permittedAddresses =
+        await litContracts.pkpPermissionsContract.read.getPermittedAddresses(
+            mintedPKP.tokenId
+        );
 
-// export async function mintTokensOnBothChains() {
-//     console.log("minting tokens on both wallets..");
-//     const abi = ["function mintTo(address)"];
+    console.log("ipfs ", action_ipfs);
+    console.log("ipfs hex ", checkGeneratedAction);
+    console.log("Actions Permissions ", permittedActions);
+    console.log("Auth methods Permissions ", permittedAuthMethods);
+    console.log("Addresses Permissions ", permittedAddresses);
+}
 
-//     const chainAProvider = new ethers.providers.JsonRpcProvider(
-//         LIT_CHAINS[chainAParams.chain].rpcUrls[0]
-//     );
-//     const chainBProvider = new ethers.providers.JsonRpcProvider(
-//         LIT_CHAINS[chainBParams.chain].rpcUrls[0]
-//     );
+export async function mintTokensOnBothChains() {
+    console.log("minting tokens on both wallets..");
+    const abi = ["function mintTo(address)"];
 
-//     let signer_A = await getWalletA();
-//     signer_A = signer_A.connect(chainAProvider);
-//     const tokenContract_A = new ethers.Contract(
-//         chainAParams.tokenAddress,
-//         abi,
-//         signer_A
-//     );
-//     const mint_A = await tokenContract_A.mintTo(signer_A.address);
-//     // console.log("gas info on chain A", mint_A)
-//     const receiptA = await mint_A.wait();
-//     console.log(receiptA);
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[swapObject.chainA].rpcUrls[0]
+    );
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[swapObject.chainB].rpcUrls[0]
+    );
 
-//     let signer_B = await getWalletB();
-//     signer_A = signer_B.connect(chainBProvider);
-//     const tokenContract_B = new ethers.Contract(
-//         chainBParams.tokenAddress,
-//         abi,
-//         signer_B
-//     );
-//     const mint_B = await tokenContract_B.mintTo(signer_B.address);
-//     // console.log("gas info on chain B", mint_B)
-//     const receiptB = await mint_B.wait();
-//     console.log(receiptB);
+    let signer_A = getEvmWalletA();
+    signer_A = signer_A.connect(chainAProvider);
+    const tokenContract_A = new ethers.Contract(
+        swapObject.contractA,
+        abi,
+        signer_A
+    );
+    const mint_A = await tokenContract_A.mintTo(signer_A.address);
+    // console.log("gas info on chain A", mint_A)
+    const receiptA = await mint_A.wait();
+    console.log(receiptA);
 
-//     console.log("minted");
-// }
+    let signer_B = getEvmWalletB();
+    signer_A = signer_B.connect(chainBProvider);
+    const tokenContract_B = new ethers.Contract(
+        swapObject.contractB,
+        abi,
+        signer_B
+    );
+    const mint_B = await tokenContract_B.mintTo(signer_B.address);
+    // console.log("gas info on chain B", mint_B)
+    const receiptB = await mint_B.wait();
+    console.log(receiptB);
 
-// export async function getFundsStatusPKP(_action_ipfs, _mintedPKP) {
-//     _action_ipfs ? (action_ipfs = _action_ipfs) : null;
-//     _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+    console.log("minted");
+}
 
-//     console.log("checking balances on pkp..");
+export async function getFundsStatusPKP(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
 
-//     const abi = ["function balanceOf(address) view returns (uint256)"];
+    console.log("checking balances on pkp..");
 
-//     const chainAProvider = new ethers.providers.JsonRpcProvider(
-//         LIT_CHAINS[chainAParams.chain].rpcUrls[0]
-//     );
-//     const contract_1 = new ethers.Contract(
-//         chainAParams.tokenAddress,
-//         abi,
-//         chainAProvider
-//     );
-//     const bal_1 = await contract_1.balanceOf(mintedPKP.ethAddress);
-//     const balanceInTokens_1 = ethers.utils.formatUnits(
-//         bal_1,
-//         chainAParams.decimals
-//     );
+    const abi = ["function balanceOf(address) view returns (uint256)"];
 
-//     const chainBProvider = new ethers.providers.JsonRpcProvider(
-//         LIT_CHAINS[chainBParams.chain].rpcUrls[0]
-//     );
-//     const contract_2 = new ethers.Contract(
-//         chainBParams.tokenAddress,
-//         abi,
-//         chainBProvider
-//     );
-//     const bal_2 = await contract_2.balanceOf(mintedPKP.ethAddress);
-//     const balanceInTokens_2 = ethers.utils.formatUnits(
-//         bal_2,
-//         chainBParams.decimals
-//     );
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[swapObject.chainA].rpcUrls[0]
+    );
+    const contract_1 = new ethers.Contract(
+        swapObject.contractA,
+        abi,
+        chainAProvider
+    );
+    const bal_1 = await contract_1.balanceOf(mintedPKP.ethAddress);
+    const balanceInTokens_1 = ethers.utils.formatUnits(
+        bal_1,
+        18
+    );
 
-//     console.log("balance on chain A: ", balanceInTokens_1);
-//     console.log("balance on chain B: ", balanceInTokens_2);
-// }
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[swapObject.chainB].rpcUrls[0]
+    );
+    const contract_2 = new ethers.Contract(
+        swapObject.contractB,
+        abi,
+        chainBProvider
+    );
+    const bal_2 = await contract_2.balanceOf(mintedPKP.ethAddress);
+    const balanceInTokens_2 = ethers.utils.formatUnits(
+        bal_2,
+        18
+    );
 
-// export async function getFundsStatusWallet() {
-//     console.log("checking balances on wallets..");
+    console.log("balance on chain A: ", balanceInTokens_1);
+    console.log("balance on chain B: ", balanceInTokens_2);
+}
 
-//     const abi = ["function balanceOf(address) view returns (uint256)"];
+export async function getFundsStatusUserWallets() {
+    console.log("checking balances on wallets..");
 
-//     let signer_A = await getWalletA();
-//     let signer_B = await getWalletB();
+    const abi = ["function balanceOf(address) view returns (uint256)"];
 
-//     const chainAProvider = new ethers.providers.JsonRpcProvider(
-//         LIT_CHAINS[chainAParams.chain].rpcUrls[0]
-//     );
-//     const chainBProvider = new ethers.providers.JsonRpcProvider(
-//         LIT_CHAINS[chainBParams.chain].rpcUrls[0]
-//     );
+    let signer_A = getEvmWalletA();
+    let signer_B = getEvmWalletB();
 
-//     signer_A = signer_A.connect(chainAProvider);
-//     const tokenContract_CA_WA = new ethers.Contract(
-//         chainAParams.tokenAddress,
-//         abi,
-//         signer_A
-//     );
-//     const balance_CA_WA = ethers.utils.formatUnits(
-//         await tokenContract_CA_WA.balanceOf(signer_A.address),
-//         chainAParams.decimals
-//     );
+    const chainAProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[swapObject.chainA].rpcUrls[0]
+    );
+    const chainBProvider = new ethers.providers.JsonRpcProvider(
+        LIT_CHAINS[swapObject.chainB].rpcUrls[0]
+    );
 
-//     signer_B = signer_B.connect(chainAProvider);
-//     const tokenContract_CA_WB = new ethers.Contract(
-//         chainAParams.tokenAddress,
-//         abi,
-//         signer_B
-//     );
-//     const balance_CA_WB = ethers.utils.formatUnits(
-//         await tokenContract_CA_WB.balanceOf(signer_B.address),
-//         chainAParams.decimals
-//     );
+    signer_A = signer_A.connect(chainAProvider);
+    const tokenContract_CA_WA = new ethers.Contract(
+        swapObject.contractA,
+        abi,
+        signer_A
+    );
+    const balance_CA_WA = ethers.utils.formatUnits(
+        await tokenContract_CA_WA.balanceOf(signer_A.address),
+        18
+    );
 
-//     signer_A = signer_A.connect(chainBProvider);
-//     const tokenContract_CB_WA = new ethers.Contract(
-//         chainBParams.tokenAddress,
-//         abi,
-//         signer_A
-//     );
-//     const balance_CB_WA = ethers.utils.formatUnits(
-//         await tokenContract_CB_WA.balanceOf(signer_A.address),
-//         chainBParams.decimals
-//     );
+    signer_B = signer_B.connect(chainAProvider);
+    const tokenContract_CA_WB = new ethers.Contract(
+        swapObject.contractB,
+        abi,
+        signer_B
+    );
+    const balance_CA_WB = ethers.utils.formatUnits(
+        await tokenContract_CA_WB.balanceOf(signer_B.address),
+        18
+    );
 
-//     signer_B = signer_B.connect(chainBProvider);
-//     const tokenContract_CB_WB = new ethers.Contract(
-//         chainBParams.tokenAddress,
-//         abi,
-//         signer_B
-//     );
-//     const balance_CB_WB = ethers.utils.formatUnits(
-//         await tokenContract_CB_WB.balanceOf(signer_B.address),
-//         chainBParams.decimals
-//     );
+    signer_A = signer_A.connect(chainBProvider);
+    const tokenContract_CB_WA = new ethers.Contract(
+        swapObject.contractA,
+        abi,
+        signer_A
+    );
+    const balance_CB_WA = ethers.utils.formatUnits(
+        await tokenContract_CB_WA.balanceOf(signer_A.address),
+        18
+    );
 
-//     console.log(
-//         `Chain A:\n${signer_A.address}, ${balance_CA_WA} ${signer_B.address}, ${balance_CA_WB}`
-//     );
-//     console.log(
-//         `Chain B:\n${signer_A.address}, ${balance_CB_WA} ${signer_B.address}, ${balance_CB_WB}`
-//     );
-// }
+    signer_B = signer_B.connect(chainBProvider);
+    const tokenContract_CB_WB = new ethers.Contract(
+        swapObject.contractB,
+        abi,
+        signer_B
+    );
+    const balance_CB_WB = ethers.utils.formatUnits(
+        await tokenContract_CB_WB.balanceOf(signer_B.address),
+        18
+    );
+
+    console.log(
+        `Chain A:\n${signer_A.address}, ${balance_CA_WA} ${signer_B.address}, ${balance_CA_WB}`
+    );
+    console.log(
+        `Chain B:\n${signer_A.address}, ${balance_CB_WA} ${signer_B.address}, ${balance_CB_WB}`
+    );
+}
+
+export async function executeTestAction(_action_ipfs, _mintedPKP) {
+    _action_ipfs ? (action_ipfs = _action_ipfs) : null;
+    _mintedPKP ? (mintedPKP = _mintedPKP) : null;
+
+    console.log("executing action started..");
+
+    const signer = getEvmWalletA();
+    const sessionSigs = await sessionSigEOA(signer, _mintedPKP);
+
+    await litNodeClient.connect();
+
+    const results = await litNodeClient.executeJs({
+        ipfsId: action_ipfs,
+        sessionSigs: sessionSigs,
+        jsParams: {
+            pkpPublicKey: mintedPKP.publicKey,
+            pkpAddress: mintedPKP.ethAddress,
+        },
+    });
+
+    console.log("results: ", results);
+}
